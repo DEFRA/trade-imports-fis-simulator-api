@@ -190,8 +190,9 @@ dotnet csharpier format .
   image and scans it with Trivy.
 - [publish.yml](.github/workflows/publish.yml) runs the tests and builds and publishes the image to CDP on every push to
   `main`. [publish-hotfix.yml](.github/workflows/publish-hotfix.yml) publishes a hotfix on demand.
-- [sonarcloud.yml](.github/workflows/sonarcloud.yml) runs the SonarCloud scan. It needs the
-  `DEFRA_trade-imports-fis-simulator-api` project set up in SonarCloud and the `SONAR_TOKEN` repository secret.
+- [sonarcloud.yml](.github/workflows/sonarcloud.yml) runs the SonarCloud scan. It is commented out in
+  `check-pull-request.yml` and `publish.yml` for now. To enable it, set up the `DEFRA_trade-imports-fis-simulator-api`
+  project in SonarCloud, add the `SONAR_TOKEN` repository secret and uncomment the `sonarcloud-scan` jobs.
 - Dependabot is configured in [.github/dependabot.yml](.github/dependabot.yml).
 
 ## About the licence

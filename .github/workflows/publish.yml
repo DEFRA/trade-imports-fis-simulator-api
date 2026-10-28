@@ -51,13 +51,17 @@ jobs:
         uses: DEFRA/cdp-build-action/build@54ced5c5344c8b9620561a1628fe8f3d858e9871
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-  sonarcloud-scan:
-    name: CDP SonarCloud Scan
-    permissions:
-      id-token: write
-      contents: read
-      pull-requests: write
-      packages: read
-    uses: ./.github/workflows/sonarcloud.yml
-    needs: build
-    secrets: inherit
+  ## SonarCloud
+  ## Uncomment to enable the SonarCloud scan
+  ## Requires the project to be set up in SonarCloud
+  ## and the SONAR_TOKEN secret to be set in the repository secrets
+  # sonarcloud-scan:
+  #   name: CDP SonarCloud Scan
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #     pull-requests: write
+  #     packages: read
+  #   uses: ./.github/workflows/sonarcloud.yml
+  #   needs: build
+  #   secrets: inherit
