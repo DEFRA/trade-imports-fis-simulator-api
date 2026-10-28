@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using Amazon.SecurityToken;
 using Amazon.SimpleNotificationService;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using MongoDB.Driver;
@@ -72,12 +73,14 @@ static void ConfigureAws(IServiceCollection services, IConfiguration configurati
 {
     services
         .AddOptions<IuuNotificationTopicConfig>()
-        .Bind(configuration.GetRequiredSection("IuuNotificationTopic"))
+        .Bind(configuration.GetSection("IuuNotificationTopic"))
         .ValidateDataAnnotations()
         .ValidateOnStart();
 
     services.AddDefaultAWSOptions(configuration.GetAWSOptions());
     services.AddAWSService<IAmazonSimpleNotificationService>();
+    services.AddAWSService<IAmazonSecurityTokenService>();
+    services.AddSingleton<IIuuNotificationTopicArnResolver, IuuNotificationTopicArnResolver>();
 }
 
 [ExcludeFromCodeCoverage]

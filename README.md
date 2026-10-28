@@ -135,12 +135,19 @@ compose/                                          floci setup script and AWS env
 |------------------------------------|-----------------------------------------------------------------------------|-----------------------------------------------------------------------------------------|
 | `Mongo:DatabaseUri`                | MongoDB connection string                                                   | Set automatically in CDP                                                                |
 | `Mongo:DatabaseName`               | MongoDB database                                                            | `trade-imports-fis-simulator-api`                                                       |
-| `IuuNotificationTopic:TopicArn`    | ARN of the topic events are published to                                    | `arn:aws:sns:eu-west-2:000000000000:trade_imports_iuunotification_sim_upserted` (local) |
+| `IuuNotificationTopic:TopicName`   | Name of the topic events are published to                                   | `trade_imports_iuunotification_sim_upserted`                                            |
 | `TraceHeader`                      | Header holding the trace id, which is copied onto published messages        | `x-cdp-request-id`                                                                      |
 | `AWS:ServiceUrl`                   | AWS endpoint override, used to point at floci                               | `http://localhost:4566` in Development                                                  |
 | `AWS:AuthenticationRegion`         | Region used to sign requests to floci                                       | `eu-west-2` in Development                                                              |
 
-The topic ARN must be set to the real ARN in each CDP environment.
+Only the topic name is configured, so nothing needs setting per environment. On the first publish the service builds
+the ARN, `arn:aws:sns:<region>:<account id>:<topic name>`, and caches it:
+
+- The region comes from the SNS client, which uses `AWS_REGION` in CDP and `AWS:AuthenticationRegion` locally.
+- The account id comes from STS `GetCallerIdentity`, which needs no IAM permissions. Locally floci returns
+  `000000000000`.
+
+The topic itself must exist in the environment, created through cdp-tenant-config.
 
 ## Running locally
 

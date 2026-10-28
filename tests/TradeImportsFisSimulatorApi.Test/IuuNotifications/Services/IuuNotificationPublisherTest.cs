@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using TradeImportsFisSimulatorApi.Config;
 using TradeImportsFisSimulatorApi.IuuNotifications.Services;
 using TradeImportsFisSimulatorApi.Utils.Logging;
 
@@ -20,11 +19,14 @@ public class IuuNotificationPublisherTest
     private const string Reference = "IUU.GB.2026.0000001";
 
     private readonly IAmazonSimpleNotificationService _sns = Substitute.For<IAmazonSimpleNotificationService>();
+    private readonly IIuuNotificationTopicArnResolver _topicArnResolver =
+        Substitute.For<IIuuNotificationTopicArnResolver>();
     private readonly HttpContextAccessor _httpContextAccessor = new();
     private PublishRequest? _request;
 
     public IuuNotificationPublisherTest()
     {
+        _topicArnResolver.GetTopicArnAsync(Arg.Any<CancellationToken>()).Returns(TopicArn);
         _sns.PublishAsync(Arg.Do<PublishRequest>(r => _request = r), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "message-id" });
     }
@@ -104,7 +106,7 @@ public class IuuNotificationPublisherTest
             _sns,
             _httpContextAccessor,
             Options.Create(new TraceHeader { Name = TraceHeaderName }),
-            Options.Create(new IuuNotificationTopicConfig { TopicArn = TopicArn }),
+            _topicArnResolver,
             NullLogger<IuuNotificationPublisher>.Instance
         );
 

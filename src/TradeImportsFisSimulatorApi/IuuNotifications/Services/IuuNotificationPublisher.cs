@@ -4,7 +4,6 @@ using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Defra.TradeImportsDataApi.Domain.Events;
 using Microsoft.Extensions.Options;
-using TradeImportsFisSimulatorApi.Config;
 using TradeImportsFisSimulatorApi.Utils.Logging;
 
 namespace TradeImportsFisSimulatorApi.IuuNotifications.Services;
@@ -18,7 +17,7 @@ public class IuuNotificationPublisher(
     IAmazonSimpleNotificationService sns,
     IHttpContextAccessor httpContextAccessor,
     IOptions<TraceHeader> traceHeaderOptions,
-    IOptions<IuuNotificationTopicConfig> config,
+    IIuuNotificationTopicArnResolver topicArnResolver,
     ILogger<IuuNotificationPublisher> logger
 ) : IIuuNotificationPublisher
 {
@@ -63,7 +62,7 @@ public class IuuNotificationPublisher(
 
         var request = new PublishRequest
         {
-            TopicArn = config.Value.TopicArn,
+            TopicArn = await topicArnResolver.GetTopicArnAsync(cancellationToken),
             Message = JsonSerializer.Serialize(resourceEvent, s_serializerOptions),
             MessageAttributes = messageAttributes,
         };
