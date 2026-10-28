@@ -73,9 +73,9 @@ public static class IuuNotificationEndpoints
         CancellationToken cancellationToken
     )
     {
-        if (string.IsNullOrWhiteSpace(request.IuuCheckOutcome))
+        if (IsBlank(request.IuuCheckOutcome))
         {
-            return IuuCheckOutcomeRequired();
+            return IuuCheckOutcomeBlank();
         }
 
         var now = UtcNowToMilliseconds();
@@ -121,9 +121,9 @@ public static class IuuNotificationEndpoints
         CancellationToken cancellationToken
     )
     {
-        if (string.IsNullOrWhiteSpace(request.IuuCheckOutcome))
+        if (IsBlank(request.IuuCheckOutcome))
         {
-            return IuuCheckOutcomeRequired();
+            return IuuCheckOutcomeBlank();
         }
 
         var document = await repository.UpdateAsync(
@@ -161,9 +161,13 @@ public static class IuuNotificationEndpoints
         return now.AddTicks(-(now.Ticks % TimeSpan.TicksPerMillisecond));
     }
 
-    // Any value is accepted, so consumers can be tested with values they do not expect, but it must be present.
-    private static ValidationProblem IuuCheckOutcomeRequired() =>
+    // Any value is accepted, so consumers can be tested with values they do not expect. Null is no outcome yet,
+    // but a blank is refused, as it is more likely a mistake than a value to test with.
+    private static bool IsBlank(string? iuuCheckOutcome) =>
+        iuuCheckOutcome is not null && string.IsNullOrWhiteSpace(iuuCheckOutcome);
+
+    private static ValidationProblem IuuCheckOutcomeBlank() =>
         TypedResults.ValidationProblem(
-            new Dictionary<string, string[]> { ["iuuCheckOutcome"] = ["iuuCheckOutcome is required"] }
+            new Dictionary<string, string[]> { ["iuuCheckOutcome"] = ["iuuCheckOutcome must be null or not blank"] }
         );
 }

@@ -45,6 +45,25 @@ public class IuuNotificationTests : SqsTestBase
     }
 
     [Fact]
+    public async Task Post_WhenIuuCheckOutcomeNull_ShouldPublishNullOutcome()
+    {
+        var reference = NewReference();
+        using var client = CreateHttpClient();
+
+        var response = await client.PostAsJsonAsync(
+            $"/iuunotification/{reference}",
+            new { iuuCheckOutcome = (string?)null },
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var message = await WaitForMessage(reference, null);
+        using var body = JsonDocument.Parse(message.Body);
+        Assert.Equal(JsonValueKind.Null, body.RootElement.GetProperty("iuuCheckOutcome").ValueKind);
+    }
+
+    [Fact]
     public async Task Post_WhenIuuCheckOutcomeMissing_ShouldBeBadRequest()
     {
         var reference = NewReference();
@@ -249,5 +268,5 @@ public class IuuNotificationTests : SqsTestBase
     /// The shape the Trade Imports Processor consumes, defined here so the tests check the JSON contract
     /// rather than reuse the API's own model.
     /// </summary>
-    private sealed record IuuNotificationMessage(string Reference, DateTime LastUpdated, string IuuCheckOutcome);
+    private sealed record IuuNotificationMessage(string Reference, DateTime LastUpdated, string? IuuCheckOutcome);
 }

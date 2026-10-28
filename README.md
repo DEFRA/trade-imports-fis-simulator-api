@@ -26,8 +26,8 @@ The message has the shape the
 |----------|---------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
 | `GET`    | `/iuunotification`              | Returns stored notifications ordered by creation time. See [query parameters](#listing-notifications).                            | `200` with an array of notifications, `400` if a parameter is invalid |
 | `GET`    | `/iuunotification/{reference}`  | Returns the stored `IuuNotification` for a reference.                                                                               | `200` with the notification, `404` if the reference does not exist   |
-| `POST`   | `/iuunotification/{reference}`  | Creates a notification, stores it and publishes it.                                                                                 | `201` with the notification, `400` if `iuuCheckOutcome` is missing, `409` if the reference already exists |
-| `PUT`    | `/iuunotification/{reference}`  | Updates a notification's check outcome and `lastUpdated`, stores the change and publishes it.                                       | `200` with the notification, `400` if `iuuCheckOutcome` is missing, `404` if the reference does not exist |
+| `POST`   | `/iuunotification/{reference}`  | Creates a notification, stores it and publishes it.                                                                                 | `201` with the notification, `400` if `iuuCheckOutcome` is missing or blank, `409` if the reference already exists |
+| `PUT`    | `/iuunotification/{reference}`  | Updates a notification's check outcome and `lastUpdated`, stores the change and publishes it.                                       | `200` with the notification, `400` if `iuuCheckOutcome` is missing or blank, `404` if the reference does not exist |
 | `DELETE` | `/iuunotification/{reference}`  | Deletes a notification from MongoDB. No event is published.                                                                         | `204`, `404` if the reference does not exist                         |
 | `POST`   | `/admin/reset`                  | Deletes every document in every collection in the simulator's database, except the `counters` collection. Indexes are kept.        | `204`                                                                |
 | `GET`    | `/admin/nextId`                 | Returns the next reference to use. See [next id](#next-id).                                                                         | `200` with `{ "nextId": "IUU.GB.2026.0000042" }`, or `"1"` if none created yet |
@@ -39,8 +39,9 @@ The message has the shape the
 { "iuuCheckOutcome": "IUUOK" }
 ```
 
-The values the processor accepts are `IUUOK`, `IUUNA` and `IUUNotCompliant`. The simulator only checks that a value is
-sent, so other values can be sent to test how consumers handle them.
+The values the processor accepts are `IUUOK`, `IUUNA` and `IUUNotCompliant`. `iuuCheckOutcome` must be sent, but
+it can be `null`, for a notification with no outcome yet; it is then published as `"iuuCheckOutcome": null`. The
+simulator refuses only a missing or blank value, so other values can be sent to test how consumers handle them.
 
 Example:
 

@@ -56,11 +56,40 @@ public class IuuNotificationEndpointsTest
             );
     }
 
+    [Fact]
+    public async Task Post_WhenIuuCheckOutcomeNull_ShouldPersistAndPublishNoOutcome()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var factory = new TestApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync(
+            $"/iuunotification/{Reference}",
+            new StringContent("{\"iuuCheckOutcome\":null}", System.Text.Encoding.UTF8, "application/json"),
+            cancellationToken
+        );
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<IuuNotification>(cancellationToken);
+        Assert.NotNull(body);
+        Assert.Null(body.IuuCheckOutcome);
+        await factory
+            .Repository.Received(1)
+            .CreateAsync(
+                Arg.Is<IuuNotificationDocument>(d => d.IuuNotification.IuuCheckOutcome == null),
+                Arg.Any<CancellationToken>()
+            );
+        await factory
+            .Publisher.Received(1)
+            .PublishAsync(Arg.Is<IuuNotification>(n => n.IuuCheckOutcome == null), Arg.Any<CancellationToken>());
+    }
+
     [Theory]
     [InlineData("{}")]
     [InlineData("{\"iuuCheckOutcome\":\"\"}")]
+    [InlineData("{\"iuuCheckOutcome\":\" \"}")]
     [InlineData("{\"iuuOption\":\"IUUOK\"}")]
-    public async Task Post_WhenIuuCheckOutcomeMissing_ShouldReturnBadRequestAndNotPersist(string json)
+    public async Task Post_WhenIuuCheckOutcomeMissingOrBlank_ShouldReturnBadRequestAndNotPersist(string json)
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var factory = new TestApplicationFactory();
@@ -148,6 +177,37 @@ public class IuuNotificationEndpointsTest
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         await factory.Publisher.DidNotReceiveWithAnyArgs().PublishAsync(default!, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Put_WhenIuuCheckOutcomeNull_ShouldClearTheOutcome()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var factory = new TestApplicationFactory();
+        var updated = new IuuNotificationDocument
+        {
+            Id = Reference,
+            Created = DateTime.UtcNow,
+            IuuNotification = new IuuNotification
+            {
+                Reference = Reference,
+                LastUpdated = DateTime.UtcNow,
+                IuuCheckOutcome = null,
+            },
+        };
+        factory
+            .Repository.UpdateAsync(Reference, null, Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(updated);
+        using var client = factory.CreateClient();
+
+        var response = await client.PutAsync(
+            $"/iuunotification/{Reference}",
+            new StringContent("{\"iuuCheckOutcome\":null}", System.Text.Encoding.UTF8, "application/json"),
+            cancellationToken
+        );
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await factory.Publisher.Received(1).PublishAsync(updated.IuuNotification, Arg.Any<CancellationToken>());
     }
 
     [Fact]

@@ -14,7 +14,7 @@ public interface IIuuNotificationRepository
 
     Task<IuuNotificationDocument?> UpdateAsync(
         string reference,
-        string iuuCheckOutcome,
+        string? iuuCheckOutcome,
         DateTime lastUpdated,
         CancellationToken cancellationToken = default
     );
@@ -57,7 +57,7 @@ public class IuuNotificationRepository(IMongoDbClientFactory connectionFactory, 
 
     public async Task<IuuNotificationDocument?> UpdateAsync(
         string reference,
-        string iuuCheckOutcome,
+        string? iuuCheckOutcome,
         DateTime lastUpdated,
         CancellationToken cancellationToken = default
     )

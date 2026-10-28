@@ -31,7 +31,7 @@ public abstract class SqsTestBase : IntegrationTestBase
     /// Waits for the message published for the given reference with the given check outcome, deleting any
     /// messages read along the way so that the queue does not fill up across tests.
     /// </summary>
-    protected async Task<Message> WaitForMessage(string reference, string iuuCheckOutcome)
+    protected async Task<Message> WaitForMessage(string reference, string? iuuCheckOutcome)
     {
         var timer = Stopwatch.StartNew();
 

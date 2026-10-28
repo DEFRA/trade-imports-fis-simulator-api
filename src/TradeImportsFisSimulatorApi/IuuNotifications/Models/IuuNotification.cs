@@ -16,6 +16,7 @@ public class IuuNotification
     [JsonPropertyName("lastUpdated")]
     public DateTime LastUpdated { get; set; }
 
+    // Null is a notification with no outcome yet. It is still written to the message, as "iuuCheckOutcome": null.
     [JsonPropertyName("iuuCheckOutcome")]
-    public required string IuuCheckOutcome { get; set; }
+    public string? IuuCheckOutcome { get; set; }
 }
