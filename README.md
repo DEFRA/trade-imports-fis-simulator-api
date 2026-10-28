@@ -24,6 +24,7 @@ messages have the same shape as those published by the Trade Imports Data API.
 
 | Method   | Path                            | Description                                                                                                                         | Responses                                                            |
 |----------|---------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
+| `GET`    | `/iuunotification`              | Returns stored notifications ordered by creation time. See [query parameters](#listing-notifications).                            | `200` with an array of notifications, `400` if a parameter is invalid |
 | `POST`   | `/iuunotification/{reference}`  | Creates a notification, stores it and publishes a `Created` event.                                                                 | `201` with the event, `409` if the reference already exists          |
 | `PUT`    | `/iuunotification/{reference}`  | Updates a notification, stores the change and publishes an `Updated` event.                                                         | `200` with the event, `404` if the reference does not exist          |
 | `DELETE` | `/iuunotification/{reference}`  | Deletes a notification from MongoDB. No event is published.                                                                         | `204`, `404` if the reference does not exist                         |
@@ -47,6 +48,21 @@ curl -X POST http://localhost:8085/iuunotification/IUU.GB.2026.0000001 \
   -H "Content-Type: application/json" \
   -H "x-cdp-request-id: my-trace-id" \
   -d '{ "iuuOption": "IUUOK" }'
+```
+
+### Listing notifications
+
+`GET /iuunotification` returns the stored `IuuNotificationEvent` documents, ordered by their `created` time. With no
+query string it returns the 10 most recently created. Notifications created at the same time are ordered by reference.
+
+| Parameter   | Description                                        | Default |
+|-------------|----------------------------------------------------|---------|
+| `skip`      | Number of notifications to skip. 0 or more.        | `0`     |
+| `limit`     | Maximum number of notifications to return. 1 or more. | `10`  |
+| `sortOrder` | `asc` (oldest first) or `desc` (newest first). Not case sensitive. | `desc` |
+
+```bash
+curl "http://localhost:8085/iuunotification?skip=10&limit=5&sortOrder=desc"
 ```
 
 ## Published messages

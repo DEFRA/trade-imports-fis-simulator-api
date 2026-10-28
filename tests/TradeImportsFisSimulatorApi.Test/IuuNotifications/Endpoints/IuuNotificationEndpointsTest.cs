@@ -5,6 +5,7 @@ using Defra.TradeImportsDataApi.Domain.Iuu;
 using MongoDB.Driver;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using TradeImportsFisSimulatorApi.IuuNotifications.Models;
 using TradeImportsFisSimulatorApi.IuuNotifications.Services;
 
 namespace TradeImportsFisSimulatorApi.Test.IuuNotifications.Endpoints;
@@ -181,6 +182,71 @@ public class IuuNotificationEndpointsTest
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         await factory.Publisher.DidNotReceiveWithAnyArgs().PublishAsync(default!, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Get_WithNoQuery_ShouldUseDefaultsAndReturnNotifications()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var factory = new TestApplicationFactory();
+        factory
+            .Repository.GetByCreatedAsync(0, 10, SortOrder.Desc, Arg.Any<CancellationToken>())
+            .Returns([CreateNotification("IUUOK")]);
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/iuunotification", cancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<List<IuuNotificationEvent>>(cancellationToken);
+        var notification = Assert.Single(body!);
+        Assert.Equal(Reference, notification.Id);
+        Assert.Equal("IUUOK", notification.IuuNotification.IuuOption);
+    }
+
+    [Theory]
+    [InlineData("asc", SortOrder.Asc)]
+    [InlineData("Asc", SortOrder.Asc)]
+    [InlineData("desc", SortOrder.Desc)]
+    [InlineData("Desc", SortOrder.Desc)]
+    public async Task Get_WithQuery_ShouldPassSkipLimitAndSortOrderToRepository(string sortOrder, SortOrder expected)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var factory = new TestApplicationFactory();
+        factory
+            .Repository.GetByCreatedAsync(
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<SortOrder>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns([]);
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(
+            $"/iuunotification?skip=5&limit=20&sortOrder={sortOrder}",
+            cancellationToken
+        );
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await factory.Repository.Received(1).GetByCreatedAsync(5, 20, expected, Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("skip=-1")]
+    [InlineData("limit=0")]
+    [InlineData("sortOrder=sideways")]
+    public async Task Get_WithInvalidQuery_ShouldReturnBadRequest(string query)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var factory = new TestApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync($"/iuunotification?{query}", cancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await factory
+            .Repository.DidNotReceiveWithAnyArgs()
+            .GetByCreatedAsync(default, default, default, Arg.Any<CancellationToken>());
     }
 
     private static IuuNotificationEvent CreateNotification(string iuuOption)

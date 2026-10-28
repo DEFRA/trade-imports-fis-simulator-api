@@ -134,6 +134,47 @@ public class IuuNotificationTests : SqsTestBase
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Get_WithNoQuery_ShouldReturnLatestTenNewestFirst()
+    {
+        using var client = CreateHttpClient();
+        await Reset(client);
+        var references = Enumerable.Range(1, 12).Select(i => $"IUU.GB.2026.{i:D7}").ToList();
+        foreach (var reference in references)
+        {
+            await Create(client, reference, "IUUOK");
+        }
+
+        var notifications = await GetNotifications(client, "/iuunotification");
+
+        Assert.Equal(references.AsEnumerable().Reverse().Take(10), notifications.Select(n => n.Id));
+    }
+
+    [Fact]
+    public async Task Get_WithQuery_ShouldSkipLimitAndSortAscending()
+    {
+        using var client = CreateHttpClient();
+        await Reset(client);
+        var references = Enumerable.Range(1, 5).Select(i => $"IUU.GB.2026.{i:D7}").ToList();
+        foreach (var reference in references)
+        {
+            await Create(client, reference, "IUUOK");
+        }
+
+        var notifications = await GetNotifications(client, "/iuunotification?skip=1&limit=2&sortOrder=asc");
+
+        Assert.Equal(references.Skip(1).Take(2), notifications.Select(n => n.Id));
+    }
+
+    private static async Task Reset(HttpClient client)
+    {
+        var response = await client.PostAsync("/admin/reset", null, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    private static async Task<List<IuuNotificationEvent>> GetNotifications(HttpClient client, string url) =>
+        await client.GetFromJsonAsync<List<IuuNotificationEvent>>(url, TestContext.Current.CancellationToken) ?? [];
+
     private static async Task Create(HttpClient client, string reference, string iuuOption)
     {
         var response = await client.PostAsJsonAsync(

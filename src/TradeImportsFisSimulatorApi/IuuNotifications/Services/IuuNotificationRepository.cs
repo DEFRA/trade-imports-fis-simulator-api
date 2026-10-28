@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Defra.TradeImportsDataApi.Domain.Events;
 using MongoDB.Driver;
+using TradeImportsFisSimulatorApi.IuuNotifications.Models;
 using TradeImportsFisSimulatorApi.Utils.Auditing;
 using TradeImportsFisSimulatorApi.Utils.Mongo;
 
@@ -21,6 +22,13 @@ public interface IIuuNotificationRepository
     Task<bool> DeleteAsync(string reference, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyCollection<string>> GetAllReferencesAsync(CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<IuuNotificationEvent>> GetByCreatedAsync(
+        int skip,
+        int limit,
+        SortOrder sortOrder,
+        CancellationToken cancellationToken = default
+    );
 }
 
 [ExcludeFromCodeCoverage]
@@ -79,6 +87,22 @@ public class IuuNotificationRepository(IMongoDbClientFactory connectionFactory, 
     public async Task<IReadOnlyCollection<string>> GetAllReferencesAsync(CancellationToken cancellationToken = default)
     {
         return await Collection.Find(_ => true).Project(e => e.Id).ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<IuuNotificationEvent>> GetByCreatedAsync(
+        int skip,
+        int limit,
+        SortOrder sortOrder,
+        CancellationToken cancellationToken = default
+    )
+    {
+        // The reference breaks ties, as notifications created close together can share a timestamp.
+        var sort =
+            sortOrder == SortOrder.Asc
+                ? Builders<IuuNotificationEvent>.Sort.Ascending(e => e.Created).Ascending(e => e.Id)
+                : Builders<IuuNotificationEvent>.Sort.Descending(e => e.Created).Descending(e => e.Id);
+
+        return await Collection.Find(_ => true).Sort(sort).Skip(skip).Limit(limit).ToListAsync(cancellationToken);
     }
 
     protected override List<CreateIndexModel<IuuNotificationEvent>> DefineIndexes(

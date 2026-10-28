@@ -13,11 +13,46 @@ public static class IuuNotificationEndpoints
     {
         var group = app.MapGroup("/iuunotification").WithTags("IuuNotification");
 
+        group.MapGet("/", GetLatest);
         group.MapPost("/{reference}", Create);
         group.MapPut("/{reference}", Update);
         group.MapDelete("/{reference}", Delete);
 
         return group;
+    }
+
+    private static async Task<Results<Ok<IReadOnlyCollection<IuuNotificationEvent>>, ValidationProblem>> GetLatest(
+        [FromServices] IIuuNotificationRepository repository,
+        CancellationToken cancellationToken,
+        [FromQuery] int skip = 0,
+        [FromQuery] int limit = 10,
+        [FromQuery] string sortOrder = nameof(SortOrder.Desc)
+    )
+    {
+        var errors = new Dictionary<string, string[]>();
+        // Parsed here rather than bound as an enum, as enum binding is case sensitive.
+        if (!Enum.TryParse<SortOrder>(sortOrder, ignoreCase: true, out var parsedSortOrder))
+        {
+            errors[nameof(sortOrder)] = ["sortOrder must be asc or desc"];
+        }
+
+        if (skip < 0)
+        {
+            errors[nameof(skip)] = ["skip must be 0 or more"];
+        }
+
+        if (limit < 1)
+        {
+            errors[nameof(limit)] = ["limit must be 1 or more"];
+        }
+
+        if (errors.Count > 0)
+        {
+            return TypedResults.ValidationProblem(errors);
+        }
+
+        var notifications = await repository.GetByCreatedAsync(skip, limit, parsedSortOrder, cancellationToken);
+        return TypedResults.Ok(notifications);
     }
 
     private static async Task<Results<Created<ResourceEvent<IuuNotificationEvent>>, Conflict<ProblemDetails>>> Create(
