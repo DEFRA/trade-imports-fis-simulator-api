@@ -1,0 +1,18 @@
+﻿{
+  "profiles": {
+    "TradeImportsFisSimulatorApi": {
+      "commandName": "Project",
+      "dotnetRunMessages": false,
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:8085",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Mongo__DatabaseUri": "mongodb://127.0.0.1:27017/?directConnection=true",
+        "Mongo__DatabaseName": "trade-imports-fis-simulator-api",
+        "AWS_REGION": "eu-west-2",
+        "AWS_ACCESS_KEY_ID": "test",
+        "AWS_SECRET_ACCESS_KEY": "test"
+      }
+    }
+  }
+}

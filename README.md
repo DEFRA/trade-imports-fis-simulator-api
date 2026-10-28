@@ -1,96 +1,200 @@
 # trade-imports-fis-simulator-api
 
-Core delivery C# ASP.NET backend template.
+A simulator for the Fish Import Service (FIS). It lets other Trade Imports services be developed and tested
+against IUU (Illegal, Unreported and Unregulated fishing) notifications without the real FIS.
 
-* [Install MongoDB](#install-mongodb)
-* [Inspect MongoDB](#inspect-mongodb)
+When an IUU notification is created or updated, the simulator:
+
+1. Stores it in MongoDB, in the `iuunotifications` collection.
+2. Publishes a `ResourceEvent<IuuNotificationEvent>` to the `trade_imports_iuunotification_sim_upserted` SNS topic.
+
+The event and notification types come from the
+[`Defra.TradeImportsDataApi.Domain`](https://github.com/DEFRA/trade-imports-data-api/tree/main/src/Domain) package, so
+messages have the same shape as those published by the Trade Imports Data API.
+
+* [Endpoints](#endpoints)
+* [Published messages](#published-messages)
+* [Solution layout](#solution-layout)
+* [Configuration](#configuration)
+* [Running locally](#running-locally)
 * [Testing](#testing)
-* [Running](#running)
-* [Dependabot](#dependabot)
+* [Build and deployment](#build-and-deployment)
 
+## Endpoints
+
+| Method   | Path                            | Description                                                                                                                         | Responses                                                            |
+|----------|---------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
+| `POST`   | `/iuunotification/{reference}`  | Creates a notification, stores it and publishes a `Created` event.                                                                 | `201` with the event, `409` if the reference already exists          |
+| `PUT`    | `/iuunotification/{reference}`  | Updates a notification, stores the change and publishes an `Updated` event.                                                         | `200` with the event, `404` if the reference does not exist          |
+| `DELETE` | `/iuunotification/{reference}`  | Deletes a notification from MongoDB. No event is published.                                                                         | `204`, `404` if the reference does not exist                         |
+| `POST`   | `/admin/reset`                  | Deletes every document in every collection in the simulator's database. Indexes are kept.                                          | `204`                                                                |
+| `GET`    | `/admin/nextId`                 | Returns the next reference to use: the stored reference with the largest trailing number, plus one, keeping its prefix and padding. | `200` with `{ "nextId": "IUU.GB.2026.0000042" }`, or `"1"` if empty |
+| `GET`    | `/health`                       | Health check.                                                                                                                       | `200`                                                                |
+
+`POST` and `PUT` take the IUU check outcome as the request body:
+
+```json
+{ "iuuOption": "IUUOK" }
+```
+
+The values the domain package lists are `IUUOK`, `IUUNA` and `IUUNotCompliant`. The simulator does not validate the
+value, so other values can be sent to test how consumers handle them.
+
+Example:
+
+```bash
+curl -X POST http://localhost:8085/iuunotification/IUU.GB.2026.0000001 \
+  -H "Content-Type: application/json" \
+  -H "x-cdp-request-id: my-trace-id" \
+  -d '{ "iuuOption": "IUUOK" }'
+```
+
+## Published messages
+
+Each message body is a camelCase JSON `ResourceEvent<IuuNotificationEvent>`:
+
+```json
+{
+  "resourceId": "IUU.GB.2026.0000001",
+  "resourceType": "IuuNotification",
+  "subResourceType": null,
+  "operation": "Created",
+  "resource": {
+    "id": "IUU.GB.2026.0000001",
+    "etag": "5e4361d606134150a2ee778b162cb756",
+    "created": "2026-10-28T06:49:21.6869234Z",
+    "updated": "2026-10-28T06:49:21.6869234Z",
+    "iuuNotification": {
+      "reference": "IUU.GB.2026.0000001",
+      "lastUpdated": "2026-10-28T06:49:21.6869234Z",
+      "iuuOption": "IUUOK"
+    }
+  },
+  "etag": "5e4361d606134150a2ee778b162cb756",
+  "timestamp": "2026-10-28T06:49:21.6869234Z",
+  "changeSet": []
+}
+```
+
+Each message has these SNS message attributes, matching the Trade Imports Data API:
+
+| Attribute          | Value                                                                                 |
+|--------------------|---------------------------------------------------------------------------------------|
+| `MessageType`      | The `ResourceEvent<IuuNotificationEvent>` type name, without version or key tokens    |
+| `ResourceType`     | `IuuNotification`                                                                     |
+| `ResourceId`       | The notification reference                                                            |
+| `x-cdp-request-id` | The trace id from the incoming request's `x-cdp-request-id` header, when it was sent  |
+
+## Solution layout
+
+```
+src/TradeImportsFisSimulatorApi                   The API
+  Admin/                                          /admin endpoints and the MongoDB reset service
+  IuuNotifications/
+    Endpoints/                                    /iuunotification endpoints
+    Models/                                       Request and response models
+    Services/                                     MongoDB repository, SNS publisher and reference generator
+  Config/                                         Strongly typed configuration
+  Utils/                                          CDP template utilities: logging, tracing, MongoDB, HTTP, trust store
+tests/TradeImportsFisSimulatorApi.Test            Unit tests
+tests/TradeImportsFisSimulatorApi.IntegrationTests Integration tests, run against Docker Compose
+compose/                                          LocalStack setup script and AWS environment for Docker Compose
+```
+
+## Configuration
+
+| Setting                            | Description                                                                 | Default                                                                                 |
+|------------------------------------|-----------------------------------------------------------------------------|-----------------------------------------------------------------------------------------|
+| `Mongo:DatabaseUri`                | MongoDB connection string                                                   | Set automatically in CDP                                                                |
+| `Mongo:DatabaseName`               | MongoDB database                                                            | `trade-imports-fis-simulator-api`                                                       |
+| `IuuNotificationTopic:TopicArn`    | ARN of the topic events are published to                                    | `arn:aws:sns:eu-west-2:000000000000:trade_imports_iuunotification_sim_upserted` (local) |
+| `TraceHeader`                      | Header holding the trace id, which is copied onto published messages        | `x-cdp-request-id`                                                                      |
+| `AWS:ServiceUrl`                   | AWS endpoint override, used to point at LocalStack                          | `http://localhost:4566` in Development                                                  |
+| `AWS:AuthenticationRegion`         | Region used to sign requests to LocalStack                                  | `eu-west-2` in Development                                                              |
+
+The topic ARN must be set to the real ARN in each CDP environment.
+
+## Running locally
 
 ### Docker Compose
 
-A Docker Compose template is in [compose.yml](compose.yml).
+[compose.yml](compose.yml) starts a local environment with:
 
-A local environment with:
+- LocalStack for SNS and SQS. [compose/start-localstack.sh](compose/start-localstack.sh) creates the
+  `trade_imports_iuunotification_sim_upserted` topic and subscribes the
+  `trade_imports_iuunotification_sim_upserted_queue` queue to it, so published messages can be read back.
+- MongoDB, as a single node replica set.
+- This service, on port 8085.
 
-- Localstack for AWS services (S3, SQS)
-- Redis
-- MongoDB
-- This service.
-- A commented out frontend example.
+The image restores packages from the DEFRA GitHub NuGet feed, so set `DEFRA_NUGET_PAT` to a GitHub token with
+`read:packages` first:
 
 ```bash
-docker compose up --build -d
+docker compose up --build -d --wait
 ```
 
-A more extensive setup is available in [github.com/DEFRA/cdp-local-environment](https://github.com/DEFRA/cdp-local-environment)
+To read the messages the simulator has published:
 
-### MongoDB
-
-#### MongoDB via Docker
-
-See above.
-
-```
-docker compose up -d mongodb
-```
-
-#### MongoDB locally
-
-Alternatively install MongoDB locally:
-
-- Install [MongoDB](https://www.mongodb.com/docs/manual/tutorial/#installation) on your local machine
-- Start MongoDB:
 ```bash
-sudo mongod --dbpath ~/mongodb-cdp
+aws --endpoint-url=http://localhost:4566 sqs receive-message \
+  --queue-url http://sqs.eu-west-2.localhost.localstack.cloud:4566/000000000000/trade_imports_iuunotification_sim_upserted_queue \
+  --message-attribute-names All
 ```
 
-#### MongoDB in CDP environments
+### From your IDE or the command line
 
-In CDP environments a MongoDB instance is already set up
-and the credentials exposed as enviromment variables.
+Start MongoDB and LocalStack, then run the API with the `Development` launch profile. It listens on
+`http://localhost:8085`:
 
+```bash
+docker compose up -d --wait mongodb localstack
+dotnet run --project src/TradeImportsFisSimulatorApi
+```
 
 ### Inspect MongoDB
 
-To inspect the Database and Collections locally:
 ```bash
-mongosh
+mongosh "mongodb://127.0.0.1:27017/trade-imports-fis-simulator-api?directConnection=true"
 ```
 
-You can use the CDP Terminal to access the environments' MongoDB.
+You can use the CDP Terminal to access MongoDB in CDP environments.
 
-### Testing
+## Testing
 
-Run the tests with:
-
-Tests run by running a full `WebApplication` backed by [Ephemeral MongoDB](https://github.com/asimmon/ephemeral-mongo).
-Tests do not use mocking of any sort and read and write from the in-memory database.
+Unit tests run the API in memory with `WebApplicationFactory`, with MongoDB and SNS replaced by substitutes. They cover
+the endpoints, the SNS publisher (message body, attributes and trace id) and the reference generator:
 
 ```bash
-dotnet test
-````
-
-### Running
-
-Run CDP-Deployments application:
-```bash
-dotnet run --project TradeImportsFisSimulatorApi --launch-profile Development
+dotnet test --filter "Category!=IntegrationTest"
 ```
 
-### SonarCloud
+Integration tests run against the Docker Compose environment. They call the API on port 8085, check MongoDB directly
+and read published messages from the LocalStack SQS queue:
 
-Example SonarCloud configuration are available in the GitHub Action workflows.
+```bash
+docker compose up --build -d --wait
+dotnet test --filter "Category=IntegrationTest"
+```
 
-### Dependabot
+Code is formatted with [CSharpier](https://csharpier.com/), and the Docker build fails if it is not formatted:
 
-We have added an example dependabot configuration file to the repository. You can enable it by renaming
-the [.github/example.dependabot.yml](.github/example.dependabot.yml) to `.github/dependabot.yml`
+```bash
+dotnet tool restore
+dotnet csharpier format .
+```
 
+## Build and deployment
 
-### About the licence
+- The [Dockerfile](Dockerfile) checks formatting, runs the unit tests and publishes the API.
+- [check-pull-request.yml](.github/workflows/check-pull-request.yml) runs the unit and integration tests, builds the
+  image and scans it with Trivy.
+- [publish.yml](.github/workflows/publish.yml) runs the tests and builds and publishes the image to CDP on every push to
+  `main`. [publish-hotfix.yml](.github/workflows/publish-hotfix.yml) publishes a hotfix on demand.
+- [sonarcloud.yml](.github/workflows/sonarcloud.yml) runs the SonarCloud scan. It needs the
+  `DEFRA_trade-imports-fis-simulator-api` project set up in SonarCloud and the `SONAR_TOKEN` repository secret.
+- Dependabot is configured in [.github/dependabot.yml](.github/dependabot.yml).
+
+## About the licence
 
 The Open Government Licence (OGL) was developed by the Controller of Her Majesty's Stationery Office (HMSO) to enable
 information providers in the public sector to license the use and re-use of their information under a common open

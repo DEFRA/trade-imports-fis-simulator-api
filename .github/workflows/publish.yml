@@ -5,14 +5,8 @@ on:
     branches:
       - main
 
-concurrency:
-  group: $${{ github.workflow }}
-  cancel-in-progress: false
-  queue: max
-
 permissions:
   contents: read
-  packages: read
 
 env:
   AWS_REGION: eu-west-2
@@ -27,27 +21,43 @@ jobs:
       id-token: write
       contents: write
       pull-requests: write
+      packages: read
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Check out code
-        uses: actions/checkout@v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 #v6.0.0
+        with:
+          dotnet-version: |
+            10.0
+      - name: Update NuGet.config
+        run: |
+          dotnet nuget remove source defra
+          dotnet nuget add source --username USERNAME --password ${{ env.GITHUB_TOKEN }} --store-password-in-clear-text --name defra "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" --configfile NuGet.config
+      - name: Run unit tests
+        run: |
+          dotnet test --filter "Category!=IntegrationTest"
+      - name: Run integration tests
+        run: |
+          docker compose up -d --wait
+          dotnet test --filter "Category=IntegrationTest"
+      - name: Docker Compose Logs
+        if: always()
+        run: |
+          docker compose logs
       - name: Build and Publish
-        uses: DEFRA/cdp-build-action/build@main
+        uses: DEFRA/cdp-build-action/build@54ced5c5344c8b9620561a1628fe8f3d858e9871
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-  ## SonarCloud
-  ## Uncomment to enable SonarCloud scan
-  ## Requires project to be set up in SonarCloud
-  ## and the SonarCloud token to be set in the repository secrets
-  # sonarcloud-scan:
-  #   name: CDP SonarCloud Scan
-  #   permissions:
-  #     id-token: write
-  #     pull-requests: write
-  #     contents: read
-  #     packages: read
-  #   uses: ./.github/workflows/sonarcloud.yml
-  #   needs: build
-  #   secrets:
-  #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  sonarcloud-scan:
+    name: CDP SonarCloud Scan
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      packages: read
+    uses: ./.github/workflows/sonarcloud.yml
+    needs: build
+    secrets: inherit
