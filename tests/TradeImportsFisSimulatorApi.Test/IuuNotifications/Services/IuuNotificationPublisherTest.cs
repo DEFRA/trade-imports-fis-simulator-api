@@ -1,12 +1,11 @@
 using System.Text.Json;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
-using Defra.TradeImportsDataApi.Domain.Events;
-using Defra.TradeImportsDataApi.Domain.Iuu;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using TradeImportsFisSimulatorApi.IuuNotifications.Models;
 using TradeImportsFisSimulatorApi.IuuNotifications.Services;
 using TradeImportsFisSimulatorApi.Utils.Logging;
 
@@ -32,40 +31,31 @@ public class IuuNotificationPublisherTest
     }
 
     [Fact]
-    public async Task PublishAsync_ShouldPublishCamelCaseEventToTopic()
+    public async Task PublishAsync_ShouldPublishIuuNotificationToTopic()
     {
-        await CreatePublisher().PublishAsync(CreateEvent(), TestContext.Current.CancellationToken);
+        await CreatePublisher().PublishAsync(CreateNotification(), TestContext.Current.CancellationToken);
 
         Assert.NotNull(_request);
         Assert.Equal(TopicArn, _request.TopicArn);
 
         using var message = JsonDocument.Parse(_request.Message);
         var root = message.RootElement;
-        Assert.Equal(Reference, root.GetProperty("resourceId").GetString());
-        Assert.Equal(ResourceEventOperations.Created, root.GetProperty("operation").GetString());
+        Assert.Equal(["reference", "lastUpdated", "iuuCheckOutcome"], root.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(Reference, root.GetProperty("reference").GetString());
         Assert.Equal(
-            "IUUOK",
-            root.GetProperty("resource").GetProperty("iuuNotification").GetProperty("iuuOption").GetString()
+            new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc),
+            root.GetProperty("lastUpdated").GetDateTime()
         );
+        Assert.Equal("IUUOK", root.GetProperty("iuuCheckOutcome").GetString());
     }
 
     [Fact]
-    public async Task PublishAsync_ShouldAddResourceAndMessageTypeAttributes()
+    public async Task PublishAsync_ShouldNotAddMessageTypeOrResourceAttributes()
     {
-        await CreatePublisher().PublishAsync(CreateEvent(), TestContext.Current.CancellationToken);
+        await CreatePublisher().PublishAsync(CreateNotification(), TestContext.Current.CancellationToken);
 
         Assert.NotNull(_request);
-        Assert.Equal(
-            ResourceEventResourceTypes.IuuNotification,
-            _request.MessageAttributes["ResourceType"].StringValue
-        );
-        Assert.Equal(Reference, _request.MessageAttributes["ResourceId"].StringValue);
-
-        var messageType = _request.MessageAttributes["MessageType"].StringValue;
-        Assert.StartsWith("Defra.TradeImportsDataApi.Domain.Events.ResourceEvent`1", messageType);
-        Assert.Contains("Defra.TradeImportsDataApi.Domain.Events.IuuNotificationEvent", messageType);
-        Assert.DoesNotContain("Version=", messageType);
-        Assert.DoesNotContain("PublicKeyToken=", messageType);
+        Assert.Empty(_request.MessageAttributes);
     }
 
     [Fact]
@@ -75,7 +65,7 @@ public class IuuNotificationPublisherTest
         httpContext.Request.Headers[TraceHeaderName] = "trace-123";
         _httpContextAccessor.HttpContext = httpContext;
 
-        await CreatePublisher().PublishAsync(CreateEvent(), TestContext.Current.CancellationToken);
+        await CreatePublisher().PublishAsync(CreateNotification(), TestContext.Current.CancellationToken);
 
         Assert.NotNull(_request);
         Assert.Equal("trace-123", _request.MessageAttributes[TraceHeaderName].StringValue);
@@ -86,7 +76,7 @@ public class IuuNotificationPublisherTest
     {
         _httpContextAccessor.HttpContext = new DefaultHttpContext();
 
-        await CreatePublisher().PublishAsync(CreateEvent(), TestContext.Current.CancellationToken);
+        await CreatePublisher().PublishAsync(CreateNotification(), TestContext.Current.CancellationToken);
 
         Assert.NotNull(_request);
         Assert.False(_request.MessageAttributes.ContainsKey(TraceHeaderName));
@@ -95,7 +85,7 @@ public class IuuNotificationPublisherTest
     [Fact]
     public async Task PublishAsync_WhenNoHttpContext_ShouldNotAddTraceIdAttribute()
     {
-        await CreatePublisher().PublishAsync(CreateEvent(), TestContext.Current.CancellationToken);
+        await CreatePublisher().PublishAsync(CreateNotification(), TestContext.Current.CancellationToken);
 
         Assert.NotNull(_request);
         Assert.False(_request.MessageAttributes.ContainsKey(TraceHeaderName));
@@ -110,30 +100,11 @@ public class IuuNotificationPublisherTest
             NullLogger<IuuNotificationPublisher>.Instance
         );
 
-    private static ResourceEvent<IuuNotificationEvent> CreateEvent()
-    {
-        var now = new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc);
-
-        return new ResourceEvent<IuuNotificationEvent>
+    private static IuuNotification CreateNotification() =>
+        new()
         {
-            ResourceId = Reference,
-            ResourceType = ResourceEventResourceTypes.IuuNotification,
-            Operation = ResourceEventOperations.Created,
-            Etag = "etag-1",
-            Timestamp = now,
-            Resource = new IuuNotificationEvent
-            {
-                Id = Reference,
-                Etag = "etag-1",
-                Created = now,
-                Updated = now,
-                IuuNotification = new IuuNotification
-                {
-                    Reference = Reference,
-                    LastUpdated = now,
-                    IuuOption = "IUUOK",
-                },
-            },
+            Reference = Reference,
+            LastUpdated = new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc),
+            IuuCheckOutcome = "IUUOK",
         };
-    }
 }

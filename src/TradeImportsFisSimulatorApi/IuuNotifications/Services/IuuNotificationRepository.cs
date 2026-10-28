@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using Defra.TradeImportsDataApi.Domain.Events;
 using MongoDB.Driver;
 using TradeImportsFisSimulatorApi.IuuNotifications.Models;
 using TradeImportsFisSimulatorApi.Utils.Auditing;
@@ -9,21 +8,20 @@ namespace TradeImportsFisSimulatorApi.IuuNotifications.Services;
 
 public interface IIuuNotificationRepository
 {
-    Task<IuuNotificationEvent?> GetAsync(string reference, CancellationToken cancellationToken = default);
+    Task<IuuNotificationDocument?> GetAsync(string reference, CancellationToken cancellationToken = default);
 
-    Task CreateAsync(IuuNotificationEvent notification, CancellationToken cancellationToken = default);
+    Task CreateAsync(IuuNotificationDocument notification, CancellationToken cancellationToken = default);
 
-    Task<IuuNotificationEvent?> UpdateAsync(
+    Task<IuuNotificationDocument?> UpdateAsync(
         string reference,
-        string? iuuOption,
-        string etag,
-        DateTime updated,
+        string iuuCheckOutcome,
+        DateTime lastUpdated,
         CancellationToken cancellationToken = default
     );
 
     Task<bool> DeleteAsync(string reference, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyCollection<IuuNotificationEvent>> GetByCreatedAsync(
+    Task<IReadOnlyCollection<IuuNotificationDocument>> GetByCreatedAsync(
         int skip,
         int limit,
         SortOrder sortOrder,
@@ -33,15 +31,18 @@ public interface IIuuNotificationRepository
 
 [ExcludeFromCodeCoverage]
 public class IuuNotificationRepository(IMongoDbClientFactory connectionFactory, ILoggerFactory loggerFactory)
-    : MongoService<IuuNotificationEvent>(connectionFactory, "iuunotifications", loggerFactory),
+    : MongoService<IuuNotificationDocument>(connectionFactory, "iuunotifications", loggerFactory),
         IIuuNotificationRepository
 {
-    public async Task<IuuNotificationEvent?> GetAsync(string reference, CancellationToken cancellationToken = default)
+    public async Task<IuuNotificationDocument?> GetAsync(
+        string reference,
+        CancellationToken cancellationToken = default
+    )
     {
         return await Collection.Find(e => e.Id == reference).FirstOrDefaultAsync(cancellationToken);
     }
 
-    public async Task CreateAsync(IuuNotificationEvent notification, CancellationToken cancellationToken = default)
+    public async Task CreateAsync(IuuNotificationDocument notification, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -54,24 +55,21 @@ public class IuuNotificationRepository(IMongoDbClientFactory connectionFactory, 
         }
     }
 
-    public async Task<IuuNotificationEvent?> UpdateAsync(
+    public async Task<IuuNotificationDocument?> UpdateAsync(
         string reference,
-        string? iuuOption,
-        string etag,
-        DateTime updated,
+        string iuuCheckOutcome,
+        DateTime lastUpdated,
         CancellationToken cancellationToken = default
     )
     {
-        var update = Builders<IuuNotificationEvent>
-            .Update.Set(e => e.IuuNotification.IuuOption, iuuOption)
-            .Set(e => e.IuuNotification.LastUpdated, updated)
-            .Set(e => e.Updated, updated)
-            .Set(e => e.Etag, etag);
+        var update = Builders<IuuNotificationDocument>
+            .Update.Set(e => e.IuuNotification.IuuCheckOutcome, iuuCheckOutcome)
+            .Set(e => e.IuuNotification.LastUpdated, lastUpdated);
 
         var result = await Collection.FindOneAndUpdateAsync(
             e => e.Id == reference,
             update,
-            new FindOneAndUpdateOptions<IuuNotificationEvent> { ReturnDocument = ReturnDocument.After },
+            new FindOneAndUpdateOptions<IuuNotificationDocument> { ReturnDocument = ReturnDocument.After },
             cancellationToken
         );
 
@@ -89,7 +87,7 @@ public class IuuNotificationRepository(IMongoDbClientFactory connectionFactory, 
         return result.DeletedCount > 0;
     }
 
-    public async Task<IReadOnlyCollection<IuuNotificationEvent>> GetByCreatedAsync(
+    public async Task<IReadOnlyCollection<IuuNotificationDocument>> GetByCreatedAsync(
         int skip,
         int limit,
         SortOrder sortOrder,
@@ -99,14 +97,14 @@ public class IuuNotificationRepository(IMongoDbClientFactory connectionFactory, 
         // The reference breaks ties, as notifications created close together can share a timestamp.
         var sort =
             sortOrder == SortOrder.Asc
-                ? Builders<IuuNotificationEvent>.Sort.Ascending(e => e.Created).Ascending(e => e.Id)
-                : Builders<IuuNotificationEvent>.Sort.Descending(e => e.Created).Descending(e => e.Id);
+                ? Builders<IuuNotificationDocument>.Sort.Ascending(e => e.Created).Ascending(e => e.Id)
+                : Builders<IuuNotificationDocument>.Sort.Descending(e => e.Created).Descending(e => e.Id);
 
         return await Collection.Find(_ => true).Sort(sort).Skip(skip).Limit(limit).ToListAsync(cancellationToken);
     }
 
-    protected override List<CreateIndexModel<IuuNotificationEvent>> DefineIndexes(
-        IndexKeysDefinitionBuilder<IuuNotificationEvent> builder
+    protected override List<CreateIndexModel<IuuNotificationDocument>> DefineIndexes(
+        IndexKeysDefinitionBuilder<IuuNotificationDocument> builder
     )
     {
         // The reference is stored as _id, which is already uniquely indexed.

@@ -82,7 +82,7 @@ public class AdminTests : IntegrationTestBase
     {
         var response = await client.PostAsJsonAsync(
             $"/iuunotification/{reference}",
-            new { iuuOption = "IUUOK" },
+            new { iuuCheckOutcome = "IUUOK" },
             TestContext.Current.CancellationToken
         );
 

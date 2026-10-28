@@ -16,7 +16,6 @@
     <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.4.6" />
     <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.7.3" />
     <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.3.3" />
-    <PackageReference Include="Defra.TradeImportsDataApi.Domain" Version="0.50.0" />
     <PackageReference Include="Elastic.CommonSchema.Serilog" Version="9.0.0" />
     <PackageReference Include="Elastic.Serilog.Enrichers.Web" Version="9.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.HeaderPropagation" Version="10.0.14" />

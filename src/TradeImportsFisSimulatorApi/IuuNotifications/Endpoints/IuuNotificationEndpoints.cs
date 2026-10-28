@@ -1,5 +1,3 @@
-using Defra.TradeImportsDataApi.Domain.Events;
-using Defra.TradeImportsDataApi.Domain.Iuu;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using TradeImportsFisSimulatorApi.IuuNotifications.Models;
@@ -22,7 +20,7 @@ public static class IuuNotificationEndpoints
         return group;
     }
 
-    private static async Task<Results<Ok<IReadOnlyCollection<IuuNotificationEvent>>, ValidationProblem>> GetLatest(
+    private static async Task<Results<Ok<IuuNotification[]>, ValidationProblem>> GetLatest(
         [FromServices] IIuuNotificationRepository repository,
         CancellationToken cancellationToken,
         [FromQuery] int skip = 0,
@@ -52,21 +50,21 @@ public static class IuuNotificationEndpoints
             return TypedResults.ValidationProblem(errors);
         }
 
-        var notifications = await repository.GetByCreatedAsync(skip, limit, parsedSortOrder, cancellationToken);
-        return TypedResults.Ok(notifications);
+        var documents = await repository.GetByCreatedAsync(skip, limit, parsedSortOrder, cancellationToken);
+        return TypedResults.Ok(documents.Select(d => d.IuuNotification).ToArray());
     }
 
-    private static async Task<Results<Ok<IuuNotificationEvent>, NotFound>> Get(
+    private static async Task<Results<Ok<IuuNotification>, NotFound>> Get(
         [FromRoute] string reference,
         [FromServices] IIuuNotificationRepository repository,
         CancellationToken cancellationToken
     )
     {
-        var notification = await repository.GetAsync(reference, cancellationToken);
-        return notification is null ? TypedResults.NotFound() : TypedResults.Ok(notification);
+        var document = await repository.GetAsync(reference, cancellationToken);
+        return document is null ? TypedResults.NotFound() : TypedResults.Ok(document.IuuNotification);
     }
 
-    private static async Task<Results<Created<ResourceEvent<IuuNotificationEvent>>, Conflict<ProblemDetails>>> Create(
+    private static async Task<Results<Created<IuuNotification>, Conflict<ProblemDetails>, ValidationProblem>> Create(
         [FromRoute] string reference,
         IuuNotificationRequest request,
         [FromServices] IIuuNotificationRepository repository,
@@ -75,24 +73,27 @@ public static class IuuNotificationEndpoints
         CancellationToken cancellationToken
     )
     {
-        var now = DateTime.UtcNow;
-        var notification = new IuuNotificationEvent
+        if (string.IsNullOrWhiteSpace(request.IuuCheckOutcome))
+        {
+            return IuuCheckOutcomeRequired();
+        }
+
+        var now = UtcNowToMilliseconds();
+        var document = new IuuNotificationDocument
         {
             Id = reference,
-            Etag = NewEtag(),
             Created = now,
-            Updated = now,
             IuuNotification = new IuuNotification
             {
                 Reference = reference,
                 LastUpdated = now,
-                IuuOption = request.IuuOption,
+                IuuCheckOutcome = request.IuuCheckOutcome,
             },
         };
 
         try
         {
-            await repository.CreateAsync(notification, cancellationToken);
+            await repository.CreateAsync(document, cancellationToken);
         }
         catch (IuuNotificationConflictException ex)
         {
@@ -107,14 +108,12 @@ public static class IuuNotificationEndpoints
         }
 
         await referenceCounter.RecordAsync(reference, cancellationToken);
+        await publisher.PublishAsync(document.IuuNotification, cancellationToken);
 
-        var resourceEvent = ToResourceEvent(notification, ResourceEventOperations.Created);
-        await publisher.PublishAsync(resourceEvent, cancellationToken);
-
-        return TypedResults.Created($"/iuunotification/{reference}", resourceEvent);
+        return TypedResults.Created($"/iuunotification/{reference}", document.IuuNotification);
     }
 
-    private static async Task<Results<Ok<ResourceEvent<IuuNotificationEvent>>, NotFound>> Update(
+    private static async Task<Results<Ok<IuuNotification>, NotFound, ValidationProblem>> Update(
         [FromRoute] string reference,
         IuuNotificationRequest request,
         [FromServices] IIuuNotificationRepository repository,
@@ -122,23 +121,26 @@ public static class IuuNotificationEndpoints
         CancellationToken cancellationToken
     )
     {
-        var notification = await repository.UpdateAsync(
+        if (string.IsNullOrWhiteSpace(request.IuuCheckOutcome))
+        {
+            return IuuCheckOutcomeRequired();
+        }
+
+        var document = await repository.UpdateAsync(
             reference,
-            request.IuuOption,
-            NewEtag(),
-            DateTime.UtcNow,
+            request.IuuCheckOutcome,
+            UtcNowToMilliseconds(),
             cancellationToken
         );
 
-        if (notification is null)
+        if (document is null)
         {
             return TypedResults.NotFound();
         }
 
-        var resourceEvent = ToResourceEvent(notification, ResourceEventOperations.Updated);
-        await publisher.PublishAsync(resourceEvent, cancellationToken);
+        await publisher.PublishAsync(document.IuuNotification, cancellationToken);
 
-        return TypedResults.Ok(resourceEvent);
+        return TypedResults.Ok(document.IuuNotification);
     }
 
     private static async Task<Results<NoContent, NotFound>> Delete(
@@ -151,21 +153,17 @@ public static class IuuNotificationEndpoints
         return deleted ? TypedResults.NoContent() : TypedResults.NotFound();
     }
 
-    private static ResourceEvent<IuuNotificationEvent> ToResourceEvent(
-        IuuNotificationEvent notification,
-        string operation
-    )
+    // MongoDB stores dates to the millisecond, so round to that before storing and publishing
+    // so the published lastUpdated always matches the stored one.
+    private static DateTime UtcNowToMilliseconds()
     {
-        return new ResourceEvent<IuuNotificationEvent>
-        {
-            ResourceId = notification.Id,
-            ResourceType = ResourceEventResourceTypes.IuuNotification,
-            Operation = operation,
-            Resource = notification,
-            Etag = notification.Etag,
-            Timestamp = notification.Updated,
-        };
+        var now = DateTime.UtcNow;
+        return now.AddTicks(-(now.Ticks % TimeSpan.TicksPerMillisecond));
     }
 
-    private static string NewEtag() => Guid.NewGuid().ToString("N");
+    // Any value is accepted, so consumers can be tested with values they do not expect, but it must be present.
+    private static ValidationProblem IuuCheckOutcomeRequired() =>
+        TypedResults.ValidationProblem(
+            new Dictionary<string, string[]> { ["iuuCheckOutcome"] = ["iuuCheckOutcome is required"] }
+        );
 }

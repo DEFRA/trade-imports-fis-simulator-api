@@ -1,18 +1,22 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
-using Defra.TradeImportsDataApi.Domain.Events;
 using Microsoft.Extensions.Options;
+using TradeImportsFisSimulatorApi.IuuNotifications.Models;
 using TradeImportsFisSimulatorApi.Utils.Logging;
 
 namespace TradeImportsFisSimulatorApi.IuuNotifications.Services;
 
 public interface IIuuNotificationPublisher
 {
-    Task PublishAsync(ResourceEvent<IuuNotificationEvent> resourceEvent, CancellationToken cancellationToken = default);
+    Task PublishAsync(IuuNotification notification, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Publishes IUU notifications as the Fish Import Service would. The message body is the notification itself,
+/// which the Trade Imports Processor consumes. No MessageType attribute is sent, as the processor's consumer is
+/// bound to a single message type and would fail to resolve one it does not know.
+/// </summary>
 public class IuuNotificationPublisher(
     IAmazonSimpleNotificationService sns,
     IHttpContextAccessor httpContextAccessor,
@@ -22,57 +26,24 @@ public class IuuNotificationPublisher(
 ) : IIuuNotificationPublisher
 {
     private const string DataTypeString = "String";
-    private const string MessageTypeHeader = "MessageType";
 
-    private static readonly JsonSerializerOptions s_serializerOptions = new()
+    public async Task PublishAsync(IuuNotification notification, CancellationToken cancellationToken = default)
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
-    // Matches the MessageType the Trade Imports Data API sends, so consumers can resolve the payload type.
-    private static readonly string s_messageType = Regex.Replace(
-        typeof(ResourceEvent<IuuNotificationEvent>).AssemblyQualifiedName!,
-        @"\, (Version|Culture|PublicKeyToken)\=([\w\d.]+)",
-        string.Empty,
-        RegexOptions.None,
-        TimeSpan.FromSeconds(2)
-    );
-
-    public async Task PublishAsync(
-        ResourceEvent<IuuNotificationEvent> resourceEvent,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var messageAttributes = new Dictionary<string, MessageAttributeValue>
-        {
-            [MessageTypeHeader] = new() { DataType = DataTypeString, StringValue = s_messageType },
-            [nameof(resourceEvent.ResourceType)] = new()
-            {
-                DataType = DataTypeString,
-                StringValue = resourceEvent.ResourceType,
-            },
-            [nameof(resourceEvent.ResourceId)] = new()
-            {
-                DataType = DataTypeString,
-                StringValue = resourceEvent.ResourceId,
-            },
-        };
-
+        var messageAttributes = new Dictionary<string, MessageAttributeValue>();
         AddTraceIdIfPresent(messageAttributes);
 
         var request = new PublishRequest
         {
             TopicArn = await topicArnResolver.GetTopicArnAsync(cancellationToken),
-            Message = JsonSerializer.Serialize(resourceEvent, s_serializerOptions),
+            Message = JsonSerializer.Serialize(notification),
             MessageAttributes = messageAttributes,
         };
 
         var response = await sns.PublishAsync(request, cancellationToken);
 
         logger.LogInformation(
-            "Published {Operation} event for IUU notification {Reference} with message id {MessageId}",
-            resourceEvent.Operation,
-            resourceEvent.ResourceId,
+            "Published IUU notification {Reference} with message id {MessageId}",
+            notification.Reference,
             response.MessageId
         );
     }

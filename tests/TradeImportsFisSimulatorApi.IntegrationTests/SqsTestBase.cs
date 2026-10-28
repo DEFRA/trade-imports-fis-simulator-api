@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Amazon.Runtime;
 using Amazon.SQS;
 using Amazon.SQS.Model;
@@ -27,10 +28,10 @@ public abstract class SqsTestBase : IntegrationTestBase
     );
 
     /// <summary>
-    /// Waits for the message published for the given resource, deleting any messages read along the way
-    /// so that the queue does not fill up across tests.
+    /// Waits for the message published for the given reference with the given check outcome, deleting any
+    /// messages read along the way so that the queue does not fill up across tests.
     /// </summary>
-    protected async Task<Message> WaitForMessage(string resourceId, string operation)
+    protected async Task<Message> WaitForMessage(string reference, string iuuCheckOutcome)
     {
         var timer = Stopwatch.StartNew();
 
@@ -56,10 +57,13 @@ public abstract class SqsTestBase : IntegrationTestBase
                     TestContext.Current.CancellationToken
                 );
 
+                // TryGetProperty, so messages left on the queue in another shape are skipped.
+                using var body = JsonDocument.Parse(message.Body);
                 if (
-                    message.MessageAttributes.TryGetValue("ResourceId", out var id)
-                    && id.StringValue == resourceId
-                    && message.Body.Contains($"\"operation\":\"{operation}\"", StringComparison.Ordinal)
+                    body.RootElement.TryGetProperty("reference", out var messageReference)
+                    && messageReference.GetString() == reference
+                    && body.RootElement.TryGetProperty("iuuCheckOutcome", out var messageOutcome)
+                    && messageOutcome.GetString() == iuuCheckOutcome
                 )
                 {
                     match = message;
@@ -72,6 +76,6 @@ public abstract class SqsTestBase : IntegrationTestBase
             }
         }
 
-        throw new TimeoutException($"No {operation} message for {resourceId} received within {s_timeout}");
+        throw new TimeoutException($"No message for {reference} with {iuuCheckOutcome} received within {s_timeout}");
     }
 }

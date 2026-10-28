@@ -1,7 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using Defra.TradeImportsDataApi.Domain.Events;
-using Defra.TradeImportsDataApi.Domain.Iuu;
 using MongoDB.Driver;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -23,30 +21,27 @@ public class IuuNotificationEndpointsTest
 
         var response = await client.PostAsJsonAsync(
             $"/iuunotification/{Reference}",
-            new { iuuOption = "IUUOK" },
+            new { iuuCheckOutcome = "IUUOK" },
             cancellationToken
         );
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.Equal($"/iuunotification/{Reference}", response.Headers.Location?.OriginalString);
 
-        var body = await response.Content.ReadFromJsonAsync<ResourceEvent<IuuNotificationEvent>>(cancellationToken);
+        var body = await response.Content.ReadFromJsonAsync<IuuNotification>(cancellationToken);
         Assert.NotNull(body);
-        Assert.Equal(Reference, body.ResourceId);
-        Assert.Equal(ResourceEventResourceTypes.IuuNotification, body.ResourceType);
-        Assert.Equal(ResourceEventOperations.Created, body.Operation);
-        Assert.Equal("IUUOK", body.Resource!.IuuNotification.IuuOption);
-        Assert.Equal(body.Resource.Etag, body.Etag);
+        Assert.Equal(Reference, body.Reference);
+        Assert.Equal("IUUOK", body.IuuCheckOutcome);
+        Assert.Equal(0, body.LastUpdated.Ticks % TimeSpan.TicksPerMillisecond);
 
         await factory
             .Repository.Received(1)
             .CreateAsync(
-                Arg.Is<IuuNotificationEvent>(n =>
-                    n.Id == Reference
-                    && n.IuuNotification.Reference == Reference
-                    && n.IuuNotification.IuuOption == "IUUOK"
-                    && n.Created == n.Updated
-                    && !string.IsNullOrEmpty(n.Etag)
+                Arg.Is<IuuNotificationDocument>(d =>
+                    d.Id == Reference
+                    && d.IuuNotification.Reference == Reference
+                    && d.IuuNotification.IuuCheckOutcome == "IUUOK"
+                    && d.Created == d.IuuNotification.LastUpdated
                 ),
                 Arg.Any<CancellationToken>()
             );
@@ -54,11 +49,32 @@ public class IuuNotificationEndpointsTest
         await factory
             .Publisher.Received(1)
             .PublishAsync(
-                Arg.Is<ResourceEvent<IuuNotificationEvent>>(e =>
-                    e.ResourceId == Reference && e.Operation == ResourceEventOperations.Created
+                Arg.Is<IuuNotification>(n =>
+                    n.Reference == Reference && n.IuuCheckOutcome == "IUUOK" && n.LastUpdated == body.LastUpdated
                 ),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"iuuCheckOutcome\":\"\"}")]
+    [InlineData("{\"iuuOption\":\"IUUOK\"}")]
+    public async Task Post_WhenIuuCheckOutcomeMissing_ShouldReturnBadRequestAndNotPersist(string json)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var factory = new TestApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync(
+            $"/iuunotification/{Reference}",
+            new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+            cancellationToken
+        );
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await factory.Repository.DidNotReceiveWithAnyArgs().CreateAsync(default!, Arg.Any<CancellationToken>());
+        await factory.Publisher.DidNotReceiveWithAnyArgs().PublishAsync(default!, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -67,13 +83,13 @@ public class IuuNotificationEndpointsTest
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var factory = new TestApplicationFactory();
         factory
-            .Repository.CreateAsync(Arg.Any<IuuNotificationEvent>(), Arg.Any<CancellationToken>())
+            .Repository.CreateAsync(Arg.Any<IuuNotificationDocument>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new IuuNotificationConflictException(Reference, new InvalidOperationException()));
         using var client = factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(
             $"/iuunotification/{Reference}",
-            new { iuuOption = "IUUOK" },
+            new { iuuCheckOutcome = "IUUOK" },
             cancellationToken
         );
 
@@ -83,45 +99,30 @@ public class IuuNotificationEndpointsTest
     }
 
     [Fact]
-    public async Task Put_WhenExists_ShouldPublishUpdatedEventAndReturnOk()
+    public async Task Put_WhenExists_ShouldPublishUpdatedNotificationAndReturnOk()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var factory = new TestApplicationFactory();
-        var updated = CreateNotification("IUUNotCompliant");
+        var updated = CreateDocument("IUUNotCompliant");
         factory
-            .Repository.UpdateAsync(
-                Reference,
-                "IUUNotCompliant",
-                Arg.Any<string>(),
-                Arg.Any<DateTime>(),
-                Arg.Any<CancellationToken>()
-            )
+            .Repository.UpdateAsync(Reference, "IUUNotCompliant", Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .Returns(updated);
         using var client = factory.CreateClient();
 
         var response = await client.PutAsJsonAsync(
             $"/iuunotification/{Reference}",
-            new { iuuOption = "IUUNotCompliant" },
+            new { iuuCheckOutcome = "IUUNotCompliant" },
             cancellationToken
         );
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var body = await response.Content.ReadFromJsonAsync<ResourceEvent<IuuNotificationEvent>>(cancellationToken);
+        var body = await response.Content.ReadFromJsonAsync<IuuNotification>(cancellationToken);
         Assert.NotNull(body);
-        Assert.Equal(ResourceEventOperations.Updated, body.Operation);
-        Assert.Equal(updated.Etag, body.Etag);
-        Assert.Equal(updated.Updated, body.Timestamp);
-        Assert.Equal("IUUNotCompliant", body.Resource!.IuuNotification.IuuOption);
+        Assert.Equal("IUUNotCompliant", body.IuuCheckOutcome);
+        Assert.Equal(updated.IuuNotification.LastUpdated, body.LastUpdated);
 
-        await factory
-            .Publisher.Received(1)
-            .PublishAsync(
-                Arg.Is<ResourceEvent<IuuNotificationEvent>>(e =>
-                    e.ResourceId == Reference && e.Operation == ResourceEventOperations.Updated
-                ),
-                Arg.Any<CancellationToken>()
-            );
+        await factory.Publisher.Received(1).PublishAsync(updated.IuuNotification, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -132,22 +133,36 @@ public class IuuNotificationEndpointsTest
         factory
             .Repository.UpdateAsync(
                 Arg.Any<string>(),
-                Arg.Any<string?>(),
                 Arg.Any<string>(),
                 Arg.Any<DateTime>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns((IuuNotificationEvent?)null);
+            .Returns((IuuNotificationDocument?)null);
         using var client = factory.CreateClient();
 
         var response = await client.PutAsJsonAsync(
             $"/iuunotification/{Reference}",
-            new { iuuOption = "IUUOK" },
+            new { iuuCheckOutcome = "IUUOK" },
             cancellationToken
         );
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         await factory.Publisher.DidNotReceiveWithAnyArgs().PublishAsync(default!, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Put_WhenIuuCheckOutcomeMissing_ShouldReturnBadRequestAndNotUpdate()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var factory = new TestApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PutAsJsonAsync($"/iuunotification/{Reference}", new { }, cancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await factory
+            .Repository.DidNotReceiveWithAnyArgs()
+            .UpdateAsync(default!, default!, default, Arg.Any<CancellationToken>());
     }
 
     [Theory]
@@ -172,13 +187,13 @@ public class IuuNotificationEndpointsTest
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var factory = new TestApplicationFactory();
         factory
-            .Repository.CreateAsync(Arg.Any<IuuNotificationEvent>(), Arg.Any<CancellationToken>())
+            .Repository.CreateAsync(Arg.Any<IuuNotificationDocument>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new MongoException("unavailable"));
         using var client = factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(
             $"/iuunotification/{Reference}",
-            new { iuuOption = "IUUOK" },
+            new { iuuCheckOutcome = "IUUOK" },
             cancellationToken
         );
 
@@ -191,21 +206,18 @@ public class IuuNotificationEndpointsTest
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var factory = new TestApplicationFactory();
-        var stored = CreateNotification("IUUNA");
+        var stored = CreateDocument("IUUNA");
         factory.Repository.GetAsync(Reference, Arg.Any<CancellationToken>()).Returns(stored);
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync($"/iuunotification/{Reference}", cancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var body = await response.Content.ReadFromJsonAsync<IuuNotificationEvent>(cancellationToken);
+        var body = await response.Content.ReadFromJsonAsync<IuuNotification>(cancellationToken);
         Assert.NotNull(body);
-        Assert.Equal(Reference, body.Id);
-        Assert.Equal(stored.Etag, body.Etag);
-        Assert.Equal(stored.Created, body.Created);
-        Assert.Equal(stored.Updated, body.Updated);
-        Assert.Equal(Reference, body.IuuNotification.Reference);
-        Assert.Equal("IUUNA", body.IuuNotification.IuuOption);
+        Assert.Equal(Reference, body.Reference);
+        Assert.Equal(stored.IuuNotification.LastUpdated, body.LastUpdated);
+        Assert.Equal("IUUNA", body.IuuCheckOutcome);
     }
 
     [Fact]
@@ -213,7 +225,7 @@ public class IuuNotificationEndpointsTest
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var factory = new TestApplicationFactory();
-        factory.Repository.GetAsync(Reference, Arg.Any<CancellationToken>()).Returns((IuuNotificationEvent?)null);
+        factory.Repository.GetAsync(Reference, Arg.Any<CancellationToken>()).Returns((IuuNotificationDocument?)null);
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync($"/iuunotification/{Reference}", cancellationToken);
@@ -228,16 +240,16 @@ public class IuuNotificationEndpointsTest
         await using var factory = new TestApplicationFactory();
         factory
             .Repository.GetByCreatedAsync(0, 10, SortOrder.Desc, Arg.Any<CancellationToken>())
-            .Returns([CreateNotification("IUUOK")]);
+            .Returns([CreateDocument("IUUOK")]);
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync("/iuunotification", cancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var body = await response.Content.ReadFromJsonAsync<List<IuuNotificationEvent>>(cancellationToken);
+        var body = await response.Content.ReadFromJsonAsync<List<IuuNotification>>(cancellationToken);
         var notification = Assert.Single(body!);
-        Assert.Equal(Reference, notification.Id);
-        Assert.Equal("IUUOK", notification.IuuNotification.IuuOption);
+        Assert.Equal(Reference, notification.Reference);
+        Assert.Equal("IUUOK", notification.IuuCheckOutcome);
     }
 
     [Theory]
@@ -286,22 +298,19 @@ public class IuuNotificationEndpointsTest
             .GetByCreatedAsync(default, default, default, Arg.Any<CancellationToken>());
     }
 
-    private static IuuNotificationEvent CreateNotification(string iuuOption)
+    private static IuuNotificationDocument CreateDocument(string iuuCheckOutcome)
     {
         var created = new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc);
-        var updated = created.AddHours(1);
 
-        return new IuuNotificationEvent
+        return new IuuNotificationDocument
         {
             Id = Reference,
-            Etag = "etag-2",
             Created = created,
-            Updated = updated,
             IuuNotification = new IuuNotification
             {
                 Reference = Reference,
-                LastUpdated = updated,
-                IuuOption = iuuOption,
+                LastUpdated = created.AddHours(1),
+                IuuCheckOutcome = iuuCheckOutcome,
             },
         };
     }

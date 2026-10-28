@@ -13,7 +13,12 @@ public static class MongoConventions
             return;
         }
 
-        var conversions = new ConventionPack { new CamelCaseElementNameConvention() };
+        // Extra elements are ignored so documents stored in an older shape can still be read.
+        var conversions = new ConventionPack
+        {
+            new CamelCaseElementNameConvention(),
+            new IgnoreExtraElementsConvention(true),
+        };
 
         ConventionRegistry.Register("CamelCase", conversions, _ => true);
     }
