@@ -1,84 +1,76 @@
 services:
+  mongodb:
+    # Initialise a Mongo cluster with a replicaset of 1 node.
+    # Based on https://medium.com/workleap/the-only-local-mongodb-replica-set-with-docker-compose-guide-youll-ever-need-2f0b74dd8384
+    # Local dev with docker compose uses 1 node below, but our live environments have multiple nodes.
+    # The replicaset needs initialising, so the healthcheck can be hijacked to initialise this so that it can keep retrying
+    # until the operation is successful (might need to wait a while after container boot for this to work, hence the interval/retries)
+    # WARNING: do not turn on authentication, otherwise will need to deal with generating key pairs and sharing them between
+    # the replicaset nodes. For local development this is overkill, so just turn off auth and connect to Mongo without creds.
+    image: mongo:6.0.13
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27017:27017"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'host.docker.internal:27017'}]}) }" | mongosh --port 27017 --quiet
+      interval: 5s
+      timeout: 30s
+      start_period: 0s
+      start_interval: 1s
+      retries: 30
+    volumes:
+      - mongodb-data:/data
+    restart: always
+
+  fis-simulator-api:
+    image: trade-imports-fis-simulator-api:local
+    build:
+      args:
+        DEFRA_NUGET_PAT: ${DEFRA_NUGET_PAT}
+      dockerfile: Dockerfile
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      floci:
+        condition: service_healthy
+    env_file:
+      - 'compose/aws.env'
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8085
+      ENVIRONMENT: local
+      Mongo__DatabaseUri: mongodb://mongodb:27017/?directConnection=true
+      AWS__ServiceUrl: http://floci:4566
+      AWS__AuthenticationRegion: eu-west-2
+    ports:
+      - "8085:8085"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
   # floci is a replacement for localstack. It emulates AWS resources (sqs, sns, s3 etc) for local development
   # See: https://floci.io for more details
   floci:
-    image: hectorvent/floci:latest-aws
+    image: floci/floci:1.5.25-compat
     ports:
       - '4566:4566'
     env_file:
-      - 'compose/aws.env'
-    environment:
-      FLOCI_DEFAULT_REGION: eu-west-2
+      - ./compose/aws.env
+      - ./compose/floci.env
     volumes:
-      - ./compose/floci/start.d:/etc/floci/init/start.d:ro
-    networks:
-      - cdp-tenant
-
-  redis:
-    image: redis:7.2.3-alpine3.18
-    ports:
-      - '6379:6379'
-    networks:
-      - cdp-tenant
-
-  mongodb:
-    image: mongo:7.0.28
-    networks:
-      - cdp-tenant
-    ports:
-      - '27017:27017'
-    volumes:
-      - mongodb-data:/data
-
-  ################################################################################
-
-  # your-frontend:
-  #   image: defradigital/your-frontend:${YOUR_FRONTEND_VERSION:-latest}
-  #   ports:
-  #     - '3000:3000'
-  #   links:
-  #     - 'floci:floci'
-  #     - 'redis:redis'
-  #   depends_on:
-  #     floci:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_started
-  #   env_file:
-  #     - 'compose/aws.env'
-  #   environment:
-  #     PORT: 3000
-  #     NODE_ENV: development
-  #     REDIS_HOST: redis
-  #     USE_SINGLE_INSTANCE_CACHE: true
-  #   networks:
-  #     - cdp-tenant
-
-  your-backend:
-    build: ./
-    ports:
-      - '8085:8085'
-    links:
-      - 'floci:floci'
-      - 'mongodb:mongodb'
-    depends_on:
-      floci:
-        condition: service_healthy
-      mongodb:
-        condition: service_started
-    env_file:
-      - 'compose/aws.env'
-    environment:
-      ASPNETCORE_URLS: http://+:8085
-      Mongo__DatabaseUri: mongodb://mongodb:27017/
-    networks:
-      - cdp-tenant
-
-################################################################################
+      - ./compose/scripts/ready.d:/etc/localstack/init/ready.d:ro
+    healthcheck:
+      # Healthy once the init script has subscribed the queue to the topic
+      test: aws --endpoint-url=http://localhost:4566 sns list-subscriptions | grep -q trade_imports_iuunotification_sim_upserted_queue
+      interval: 5s
+      timeout: 5s
+      start_period: 5s
+      retries: 10
 
 volumes:
   mongodb-data:
-
-networks:
-  cdp-tenant:
-    driver: bridge
