@@ -6,7 +6,7 @@ using Amazon.SQS.Model;
 namespace TradeImportsFisSimulatorApi.IntegrationTests;
 
 /// <summary>
-/// Reads from the queue subscribed to the IUU notification topic in compose/start-localstack.sh.
+/// Reads from the queue subscribed to the IUU notification topic in compose/scripts/ready.d/10-init-floci.sh.
 /// </summary>
 public abstract class SqsTestBase : IntegrationTestBase
 {

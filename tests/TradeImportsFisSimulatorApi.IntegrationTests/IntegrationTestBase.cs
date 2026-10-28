@@ -4,7 +4,7 @@ using MongoDB.Driver;
 namespace TradeImportsFisSimulatorApi.IntegrationTests;
 
 /// <summary>
-/// Integration tests run against the stack started by compose.yml (API, MongoDB and LocalStack).
+/// Integration tests run against the stack started by compose.yml (API, MongoDB and floci).
 /// They share state, so they run in a single non-parallel collection.
 /// </summary>
 [Trait("Category", "IntegrationTest")]

@@ -98,7 +98,7 @@ src/TradeImportsFisSimulatorApi                   The API
   Utils/                                          CDP template utilities: logging, tracing, MongoDB, HTTP, trust store
 tests/TradeImportsFisSimulatorApi.Test            Unit tests
 tests/TradeImportsFisSimulatorApi.IntegrationTests Integration tests, run against Docker Compose
-compose/                                          LocalStack setup script and AWS environment for Docker Compose
+compose/                                          floci setup script and AWS environment for Docker Compose
 ```
 
 ## Configuration
@@ -109,8 +109,8 @@ compose/                                          LocalStack setup script and AW
 | `Mongo:DatabaseName`               | MongoDB database                                                            | `trade-imports-fis-simulator-api`                                                       |
 | `IuuNotificationTopic:TopicArn`    | ARN of the topic events are published to                                    | `arn:aws:sns:eu-west-2:000000000000:trade_imports_iuunotification_sim_upserted` (local) |
 | `TraceHeader`                      | Header holding the trace id, which is copied onto published messages        | `x-cdp-request-id`                                                                      |
-| `AWS:ServiceUrl`                   | AWS endpoint override, used to point at LocalStack                          | `http://localhost:4566` in Development                                                  |
-| `AWS:AuthenticationRegion`         | Region used to sign requests to LocalStack                                  | `eu-west-2` in Development                                                              |
+| `AWS:ServiceUrl`                   | AWS endpoint override, used to point at floci                               | `http://localhost:4566` in Development                                                  |
+| `AWS:AuthenticationRegion`         | Region used to sign requests to floci                                       | `eu-west-2` in Development                                                              |
 
 The topic ARN must be set to the real ARN in each CDP environment.
 
@@ -120,7 +120,8 @@ The topic ARN must be set to the real ARN in each CDP environment.
 
 [compose.yml](compose.yml) starts a local environment with:
 
-- LocalStack for SNS and SQS. [compose/start-localstack.sh](compose/start-localstack.sh) creates the
+- [floci](https://floci.io), a LocalStack replacement, for SNS and SQS.
+  [compose/scripts/ready.d/10-init-floci.sh](compose/scripts/ready.d/10-init-floci.sh) creates the
   `trade_imports_iuunotification_sim_upserted` topic and subscribes the
   `trade_imports_iuunotification_sim_upserted_queue` queue to it, so published messages can be read back.
 - MongoDB, as a single node replica set.
@@ -137,17 +138,17 @@ To read the messages the simulator has published:
 
 ```bash
 aws --endpoint-url=http://localhost:4566 sqs receive-message \
-  --queue-url http://sqs.eu-west-2.localhost.localstack.cloud:4566/000000000000/trade_imports_iuunotification_sim_upserted_queue \
+  --queue-url http://localhost:4566/000000000000/trade_imports_iuunotification_sim_upserted_queue \
   --message-attribute-names All
 ```
 
 ### From your IDE or the command line
 
-Start MongoDB and LocalStack, then run the API with the `Development` launch profile. It listens on
+Start MongoDB and floci, then run the API with the `Development` launch profile. It listens on
 `http://localhost:8085`:
 
 ```bash
-docker compose up -d --wait mongodb localstack
+docker compose up -d --wait mongodb floci
 dotnet run --project src/TradeImportsFisSimulatorApi
 ```
 
@@ -169,7 +170,7 @@ dotnet test --filter "Category!=IntegrationTest"
 ```
 
 Integration tests run against the Docker Compose environment. They call the API on port 8085, check MongoDB directly
-and read published messages from the LocalStack SQS queue:
+and read published messages from the SQS queue in floci:
 
 ```bash
 docker compose up --build -d --wait
