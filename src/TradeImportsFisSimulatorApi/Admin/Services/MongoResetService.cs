@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using TradeImportsFisSimulatorApi.IuuNotifications.Services;
 using TradeImportsFisSimulatorApi.Utils.Auditing;
 using TradeImportsFisSimulatorApi.Utils.Mongo;
 
@@ -23,8 +24,11 @@ public class MongoResetService(IMongoDbClientFactory connectionFactory, ILogger<
         ).ToListAsync(cancellationToken);
 
         // Delete documents rather than dropping collections so that indexes are kept.
+        // The counters are kept so that /admin/nextId does not start again from 1.
         foreach (
-            var collectionName in collectionNames.Where(name => !name.StartsWith("system.", StringComparison.Ordinal))
+            var collectionName in collectionNames.Where(name =>
+                !name.StartsWith("system.", StringComparison.Ordinal) && name != IuuReferenceCounter.CollectionName
+            )
         )
         {
             var result = await database

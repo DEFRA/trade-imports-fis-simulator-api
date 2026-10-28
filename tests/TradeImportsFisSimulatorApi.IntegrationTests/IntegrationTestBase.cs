@@ -35,7 +35,8 @@ public abstract class IntegrationTestBase
     protected static Task<BsonDocument?> FindIuuNotification(string reference) =>
         GetIuuNotificationsCollection().Find(Builders<BsonDocument>.Filter.Eq("_id", reference)).FirstOrDefaultAsync()!;
 
-    protected static string NewReference() => $"IUU.TEST.{Guid.NewGuid():N}";
+    // Ends in a letter so it has no trailing number and is not recorded by the next id counter.
+    protected static string NewReference() => $"IUU.TEST.{Guid.NewGuid():N}.x";
 }
 
 [CollectionDefinition(Name, DisableParallelization = true)]

@@ -9,7 +9,7 @@ using TradeImportsFisSimulatorApi.IuuNotifications.Services;
 namespace TradeImportsFisSimulatorApi.Test;
 
 /// <summary>
-/// Runs the real application with MongoDB and SNS replaced by substitutes.
+/// Runs the real application with MongoDB, the reference counter and SNS replaced by substitutes.
 /// </summary>
 public sealed class TestApplicationFactory : WebApplicationFactory<Program>
 {
@@ -18,6 +18,8 @@ public sealed class TestApplicationFactory : WebApplicationFactory<Program>
     public IIuuNotificationPublisher Publisher { get; } = Substitute.For<IIuuNotificationPublisher>();
 
     public IMongoResetService ResetService { get; } = Substitute.For<IMongoResetService>();
+
+    public IIuuReferenceCounter ReferenceCounter { get; } = Substitute.For<IIuuReferenceCounter>();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -29,6 +31,8 @@ public sealed class TestApplicationFactory : WebApplicationFactory<Program>
             services.AddSingleton(Publisher);
             services.RemoveAll<IMongoResetService>();
             services.AddSingleton(ResetService);
+            services.RemoveAll<IIuuReferenceCounter>();
+            services.AddSingleton(ReferenceCounter);
         });
     }
 }

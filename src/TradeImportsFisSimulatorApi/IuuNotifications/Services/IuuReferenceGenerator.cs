@@ -33,6 +33,17 @@ public static partial class IuuReferenceGenerator
         return largest.Prefix + next;
     }
 
+    /// <summary>
+    /// Gets the trailing number of a reference, e.g. 41 for "IUU.GB.0000041". Returns false if the reference
+    /// does not end in a number, or the number does not fit in a long.
+    /// </summary>
+    public static bool TryGetTrailingNumber(string reference, out long number)
+    {
+        number = 0;
+        var match = TrailingNumber().Match(reference);
+        return match.Success && long.TryParse(match.Groups["number"].Value, out number);
+    }
+
     [GeneratedRegex(@"^(?<prefix>.*?)(?<number>\d+)$")]
     private static partial Regex TrailingNumber();
 }

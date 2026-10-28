@@ -14,6 +14,7 @@ public static class IuuNotificationEndpoints
         var group = app.MapGroup("/iuunotification").WithTags("IuuNotification");
 
         group.MapGet("/", GetLatest);
+        group.MapGet("/{reference}", Get);
         group.MapPost("/{reference}", Create);
         group.MapPut("/{reference}", Update);
         group.MapDelete("/{reference}", Delete);
@@ -55,11 +56,22 @@ public static class IuuNotificationEndpoints
         return TypedResults.Ok(notifications);
     }
 
+    private static async Task<Results<Ok<IuuNotificationEvent>, NotFound>> Get(
+        [FromRoute] string reference,
+        [FromServices] IIuuNotificationRepository repository,
+        CancellationToken cancellationToken
+    )
+    {
+        var notification = await repository.GetAsync(reference, cancellationToken);
+        return notification is null ? TypedResults.NotFound() : TypedResults.Ok(notification);
+    }
+
     private static async Task<Results<Created<ResourceEvent<IuuNotificationEvent>>, Conflict<ProblemDetails>>> Create(
         [FromRoute] string reference,
         IuuNotificationRequest request,
         [FromServices] IIuuNotificationRepository repository,
         [FromServices] IIuuNotificationPublisher publisher,
+        [FromServices] IIuuReferenceCounter referenceCounter,
         CancellationToken cancellationToken
     )
     {
@@ -93,6 +105,8 @@ public static class IuuNotificationEndpoints
                 }
             );
         }
+
+        await referenceCounter.RecordAsync(reference, cancellationToken);
 
         var resourceEvent = ToResourceEvent(notification, ResourceEventOperations.Created);
         await publisher.PublishAsync(resourceEvent, cancellationToken);

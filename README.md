@@ -25,11 +25,12 @@ messages have the same shape as those published by the Trade Imports Data API.
 | Method   | Path                            | Description                                                                                                                         | Responses                                                            |
 |----------|---------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
 | `GET`    | `/iuunotification`              | Returns stored notifications ordered by creation time. See [query parameters](#listing-notifications).                            | `200` with an array of notifications, `400` if a parameter is invalid |
+| `GET`    | `/iuunotification/{reference}`  | Returns the stored `IuuNotificationEvent` for a reference.                                                                          | `200` with the notification, `404` if the reference does not exist   |
 | `POST`   | `/iuunotification/{reference}`  | Creates a notification, stores it and publishes a `Created` event.                                                                 | `201` with the event, `409` if the reference already exists          |
 | `PUT`    | `/iuunotification/{reference}`  | Updates a notification, stores the change and publishes an `Updated` event.                                                         | `200` with the event, `404` if the reference does not exist          |
 | `DELETE` | `/iuunotification/{reference}`  | Deletes a notification from MongoDB. No event is published.                                                                         | `204`, `404` if the reference does not exist                         |
-| `POST`   | `/admin/reset`                  | Deletes every document in every collection in the simulator's database. Indexes are kept.                                          | `204`                                                                |
-| `GET`    | `/admin/nextId`                 | Returns the next reference to use: the stored reference with the largest trailing number, plus one, keeping its prefix and padding. | `200` with `{ "nextId": "IUU.GB.2026.0000042" }`, or `"1"` if empty |
+| `POST`   | `/admin/reset`                  | Deletes every document in every collection in the simulator's database, except the `counters` collection. Indexes are kept.        | `204`                                                                |
+| `GET`    | `/admin/nextId`                 | Returns the next reference to use. See [next id](#next-id).                                                                         | `200` with `{ "nextId": "IUU.GB.2026.0000042" }`, or `"1"` if none created yet |
 | `GET`    | `/health`                       | Health check.                                                                                                                       | `200`                                                                |
 
 `POST` and `PUT` take the IUU check outcome as the request body:
@@ -64,6 +65,17 @@ query string it returns the 10 most recently created. Notifications created at t
 ```bash
 curl "http://localhost:8085/iuunotification?skip=10&limit=5&sortOrder=desc"
 ```
+
+### Next id
+
+Each time a notification is created, its reference is recorded in the `counters` collection if its trailing number is
+larger than the one already recorded. `GET /admin/nextId` takes that reference and adds one to its trailing number,
+keeping the prefix and zero padding, so `IUU.GB.2026.0000041` gives `IUU.GB.2026.0000042`.
+
+- The counter is not cleared by `/admin/reset` or by deleting notifications, so ids are not reused after the data is
+  cleared. To start again from 1, delete the `counters` collection in MongoDB.
+- Calling `nextId` does not reserve the id. It changes only when a notification with a larger number is created.
+- References that do not end in a number, or whose number does not fit in a 64-bit integer, are not recorded.
 
 ## Published messages
 
@@ -109,7 +121,7 @@ src/TradeImportsFisSimulatorApi                   The API
   IuuNotifications/
     Endpoints/                                    /iuunotification endpoints
     Models/                                       Request and response models
-    Services/                                     MongoDB repository, SNS publisher and reference generator
+    Services/                                     MongoDB repository, next id counter, SNS publisher and reference generator
   Config/                                         Strongly typed configuration
   Utils/                                          CDP template utilities: logging, tracing, MongoDB, HTTP, trust store
 tests/TradeImportsFisSimulatorApi.Test            Unit tests

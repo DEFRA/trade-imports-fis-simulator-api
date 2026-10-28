@@ -29,4 +29,21 @@ public class IuuReferenceGeneratorTest
     {
         Assert.Equal("6", IuuReferenceGenerator.Next(["abc", "5"]));
     }
+
+    [Theory]
+    [InlineData("IUU.GB.2026.0000041", true, 41)]
+    [InlineData("7", true, 7)]
+    [InlineData("IUU.TEST.abc", false, 0)]
+    [InlineData("IUU.99999999999999999999", false, 0)]
+    public void TryGetTrailingNumber_ShouldParseTrailingNumberThatFitsInLong(
+        string reference,
+        bool expected,
+        long expectedNumber
+    )
+    {
+        var result = IuuReferenceGenerator.TryGetTrailingNumber(reference, out var number);
+
+        Assert.Equal(expected, result);
+        Assert.Equal(expectedNumber, number);
+    }
 }

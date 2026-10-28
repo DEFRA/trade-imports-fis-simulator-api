@@ -63,6 +63,7 @@ static void ConfigureServices(WebApplicationBuilder builder)
     // App services
     services.AddSingleton<IIuuNotificationRepository, IuuNotificationRepository>();
     services.AddSingleton<IIuuNotificationPublisher, IuuNotificationPublisher>();
+    services.AddSingleton<IIuuReferenceCounter, IuuReferenceCounter>();
     services.AddSingleton<IMongoResetService, MongoResetService>();
 }
 

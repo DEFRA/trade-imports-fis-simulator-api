@@ -50,6 +50,7 @@ public class IuuNotificationEndpointsTest
                 ),
                 Arg.Any<CancellationToken>()
             );
+        await factory.ReferenceCounter.Received(1).RecordAsync(Reference, Arg.Any<CancellationToken>());
         await factory
             .Publisher.Received(1)
             .PublishAsync(
@@ -77,6 +78,7 @@ public class IuuNotificationEndpointsTest
         );
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        await factory.ReferenceCounter.DidNotReceiveWithAnyArgs().RecordAsync(default!, Arg.Any<CancellationToken>());
         await factory.Publisher.DidNotReceiveWithAnyArgs().PublishAsync(default!, Arg.Any<CancellationToken>());
     }
 
@@ -182,6 +184,41 @@ public class IuuNotificationEndpointsTest
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         await factory.Publisher.DidNotReceiveWithAnyArgs().PublishAsync(default!, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetByReference_WhenExists_ShouldReturnNotification()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var factory = new TestApplicationFactory();
+        var stored = CreateNotification("IUUNA");
+        factory.Repository.GetAsync(Reference, Arg.Any<CancellationToken>()).Returns(stored);
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync($"/iuunotification/{Reference}", cancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<IuuNotificationEvent>(cancellationToken);
+        Assert.NotNull(body);
+        Assert.Equal(Reference, body.Id);
+        Assert.Equal(stored.Etag, body.Etag);
+        Assert.Equal(stored.Created, body.Created);
+        Assert.Equal(stored.Updated, body.Updated);
+        Assert.Equal(Reference, body.IuuNotification.Reference);
+        Assert.Equal("IUUNA", body.IuuNotification.IuuOption);
+    }
+
+    [Fact]
+    public async Task GetByReference_WhenNotFound_ShouldReturnNotFound()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var factory = new TestApplicationFactory();
+        factory.Repository.GetAsync(Reference, Arg.Any<CancellationToken>()).Returns((IuuNotificationEvent?)null);
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync($"/iuunotification/{Reference}", cancellationToken);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]

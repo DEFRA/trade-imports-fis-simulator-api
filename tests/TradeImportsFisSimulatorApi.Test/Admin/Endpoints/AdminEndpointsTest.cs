@@ -21,13 +21,11 @@ public class AdminEndpointsTest
     }
 
     [Fact]
-    public async Task NextId_ShouldIncrementLargestStoredReference()
+    public async Task NextId_ShouldIncrementLastCountedReference()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var factory = new TestApplicationFactory();
-        factory
-            .Repository.GetAllReferencesAsync(Arg.Any<CancellationToken>())
-            .Returns(["IUU.GB.2026.0000009", "IUU.GB.2026.0000041"]);
+        factory.ReferenceCounter.GetLastReferenceAsync(Arg.Any<CancellationToken>()).Returns("IUU.GB.2026.0000041");
         using var client = factory.CreateClient();
 
         var response = await client.GetFromJsonAsync<NextIdResponse>("/admin/nextId", cancellationToken);
@@ -36,11 +34,11 @@ public class AdminEndpointsTest
     }
 
     [Fact]
-    public async Task NextId_WhenNoReferences_ShouldReturnOne()
+    public async Task NextId_WhenNothingCounted_ShouldReturnOne()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var factory = new TestApplicationFactory();
-        factory.Repository.GetAllReferencesAsync(Arg.Any<CancellationToken>()).Returns([]);
+        factory.ReferenceCounter.GetLastReferenceAsync(Arg.Any<CancellationToken>()).Returns((string?)null);
         using var client = factory.CreateClient();
 
         var response = await client.GetFromJsonAsync<NextIdResponse>("/admin/nextId", cancellationToken);

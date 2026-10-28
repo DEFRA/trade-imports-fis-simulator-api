@@ -9,6 +9,8 @@ namespace TradeImportsFisSimulatorApi.IuuNotifications.Services;
 
 public interface IIuuNotificationRepository
 {
+    Task<IuuNotificationEvent?> GetAsync(string reference, CancellationToken cancellationToken = default);
+
     Task CreateAsync(IuuNotificationEvent notification, CancellationToken cancellationToken = default);
 
     Task<IuuNotificationEvent?> UpdateAsync(
@@ -20,8 +22,6 @@ public interface IIuuNotificationRepository
     );
 
     Task<bool> DeleteAsync(string reference, CancellationToken cancellationToken = default);
-
-    Task<IReadOnlyCollection<string>> GetAllReferencesAsync(CancellationToken cancellationToken = default);
 
     Task<IReadOnlyCollection<IuuNotificationEvent>> GetByCreatedAsync(
         int skip,
@@ -36,6 +36,11 @@ public class IuuNotificationRepository(IMongoDbClientFactory connectionFactory, 
     : MongoService<IuuNotificationEvent>(connectionFactory, "iuunotifications", loggerFactory),
         IIuuNotificationRepository
 {
+    public async Task<IuuNotificationEvent?> GetAsync(string reference, CancellationToken cancellationToken = default)
+    {
+        return await Collection.Find(e => e.Id == reference).FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task CreateAsync(IuuNotificationEvent notification, CancellationToken cancellationToken = default)
     {
         try
@@ -82,11 +87,6 @@ public class IuuNotificationRepository(IMongoDbClientFactory connectionFactory, 
     {
         var result = await Collection.DeleteOneAsync(e => e.Id == reference, cancellationToken);
         return result.DeletedCount > 0;
-    }
-
-    public async Task<IReadOnlyCollection<string>> GetAllReferencesAsync(CancellationToken cancellationToken = default)
-    {
-        return await Collection.Find(_ => true).Project(e => e.Id).ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<IuuNotificationEvent>> GetByCreatedAsync(

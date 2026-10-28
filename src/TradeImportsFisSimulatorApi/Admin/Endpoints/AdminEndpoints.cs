@@ -28,11 +28,13 @@ public static class AdminEndpoints
     }
 
     private static async Task<Ok<NextIdResponse>> NextId(
-        [FromServices] IIuuNotificationRepository repository,
+        [FromServices] IIuuReferenceCounter referenceCounter,
         CancellationToken cancellationToken
     )
     {
-        var references = await repository.GetAllReferencesAsync(cancellationToken);
-        return TypedResults.Ok(new NextIdResponse(IuuReferenceGenerator.Next(references)));
+        var lastReference = await referenceCounter.GetLastReferenceAsync(cancellationToken);
+        return TypedResults.Ok(
+            new NextIdResponse(IuuReferenceGenerator.Next(lastReference is null ? [] : [lastReference]))
+        );
     }
 }

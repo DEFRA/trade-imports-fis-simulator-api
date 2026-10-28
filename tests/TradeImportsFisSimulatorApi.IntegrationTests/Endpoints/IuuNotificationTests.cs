@@ -135,6 +135,45 @@ public class IuuNotificationTests : SqsTestBase
     }
 
     [Fact]
+    public async Task GetByReference_WhenExists_ShouldReturnStoredNotification()
+    {
+        var reference = NewReference();
+        using var client = CreateHttpClient();
+        await Create(client, reference, "IUUOK");
+        var update = await client.PutAsJsonAsync(
+            $"/iuunotification/{reference}",
+            new { iuuOption = "IUUNA" },
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(HttpStatusCode.OK, update.StatusCode);
+
+        var notification = await client.GetFromJsonAsync<IuuNotificationEvent>(
+            $"/iuunotification/{reference}",
+            TestContext.Current.CancellationToken
+        );
+
+        var document = await FindIuuNotification(reference);
+        Assert.NotNull(notification);
+        Assert.Equal(reference, notification.Id);
+        Assert.Equal(reference, notification.IuuNotification.Reference);
+        Assert.Equal("IUUNA", notification.IuuNotification.IuuOption);
+        Assert.Equal(document!["etag"].AsString, notification.Etag);
+    }
+
+    [Fact]
+    public async Task GetByReference_WhenNotFound_ShouldBeNotFound()
+    {
+        using var client = CreateHttpClient();
+
+        var response = await client.GetAsync(
+            $"/iuunotification/{NewReference()}",
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Get_WithNoQuery_ShouldReturnLatestTenNewestFirst()
     {
         using var client = CreateHttpClient();
